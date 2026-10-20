@@ -16,6 +16,10 @@ public:
     // Re-patch all currently loaded modules; call after each guest
     // nativeLoad so freshly dlopened libraries are covered too.
     static void patchAllModules();
+
+    // Dobby inline hooks for paths GOT patching cannot reach: raw read()
+    // of /proc/self/cmdline/maps and protection-internal direct calls.
+    static void installDobbyHooks();
 };
 
 #endif //VIRTUALM_FILESYSTEMHOOK_H

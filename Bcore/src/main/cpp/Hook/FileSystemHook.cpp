@@ -546,3 +546,35 @@ void FileSystemHook::install(JNIEnv *env) {
     patchAllModules();
     ALOGD("FileSystemHook: installed");
 }
+
+// ------------------------------------------------- Dobby inline hooks
+// GOT patching cannot intercept direct internal calls (e.g. the protection
+// reading /proc/self/cmdline with raw read()). Dobby rewrites the function
+// prologue, which covers every call site.
+
+#include "dobby.h"
+
+static ssize_t (*d_read)(int, void *, size_t);
+
+static ssize_t hooked_read(int fd, void *buf, size_t count) {
+    ssize_t n = d_read(fd, buf, count);
+    if (n <= 0) return n;
+    // Only filter reads that carry box-identifying content.
+    char *p = static_cast<char *>(buf);
+    if (memFind(p, (size_t) n, kHostPkg, kHostPkgLen) == nullptr &&
+        memFind(p, (size_t) n, kBridgeLib, kBridgeLibLen) == nullptr) {
+        return n;
+    }
+    return (ssize_t) filterProcBuffer(p, (size_t) n, (size_t) n);
+}
+
+void FileSystemHook::installDobbyHooks() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    void *addr = dlsym(RTLD_DEFAULT, "read");
+    if (addr == nullptr) return;
+    if (DobbyHook(addr, (void *) &hooked_read, (void **) &d_read) == 0) {
+        ALOGD("FileSystemHook: dobby hooked read@%p", addr);
+    }
+}

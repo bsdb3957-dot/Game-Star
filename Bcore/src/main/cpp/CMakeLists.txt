@@ -4,6 +4,7 @@
 # Sets the minimum version of CMake required to build the native library.
 
 cmake_minimum_required(VERSION 3.4.1)
+project(ABridge CXX C ASM)
 
 # Creates and names a library, sets it as either STATIC
 # or SHARED, and provides the relative paths to its source code.
@@ -17,6 +18,23 @@ aux_source_directory(Utils SRC2)
 aux_source_directory(Hook SRC3)
 aux_source_directory(JniHook SRC4)
 add_compile_options(-w)
+
+# Dobby inline-hook engine (static, no external deps at runtime).
+set(DOBBY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dobby)
+file(GLOB_RECURSE DOBBY_ALL
+        ${DOBBY_DIR}/source/*.cc
+        ${DOBBY_DIR}/source/*.c
+        ${DOBBY_DIR}/source/*.S
+        ${DOBBY_DIR}/external/logging/logging.cc)
+# Exclude non-Android / kernel / deprecated sources.
+foreach(f ${DOBBY_ALL})
+    if (f MATCHES "Darwin|darwin|Windows|windows|x86|x64|KernelMode|deprecated|iphone|example|test|substrated|MultiThreadSupport")
+        list(REMOVE_ITEM DOBBY_ALL ${f})
+    endif()
+endforeach()
+
+include_directories(${DOBBY_DIR}/include ${DOBBY_DIR} ${DOBBY_DIR}/source ${DOBBY_DIR}/source/dobby ${DOBBY_DIR}/source/include ${DOBBY_DIR}/builtin-plugin ${DOBBY_DIR}/external ${DOBBY_DIR}/external/logging)
+
 add_library( # Sets the name of the library.
         ABridge
         # Sets the library as a shared library.
@@ -27,6 +45,7 @@ add_library( # Sets the name of the library.
         ${SRC2}
         ${SRC3}
         ${SRC4}
+        ${DOBBY_ALL}
         )
 
 # Searches for a specified prebuilt library and stores the path as a

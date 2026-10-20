@@ -130,6 +130,7 @@ void nativeHook(JNIEnv *env) {
     RuntimeHook::init(env);
     BinderHook::init(env);
     FileSystemHook::install(env);
+    FileSystemHook::installDobbyHooks();
 }
 
 void hideXposed(JNIEnv *env, jclass clazz) {
