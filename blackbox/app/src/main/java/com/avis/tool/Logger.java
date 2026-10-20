@@ -1,4 +1,4 @@
-package com.oxide.box;
+package com.avis.tool;
 
 import android.os.Environment;
 import android.util.Log;
@@ -13,9 +13,9 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
-/** Writes to Download/oxide_box.log; silently falls back to logcat only if storage is not writable. */
+/** Writes to Download/avis_tool.log; silently falls back to logcat only if storage is not writable. */
 public final class Logger {
-    private static final String TAG = "OxideBox";
+    private static final String TAG = "AvisTool";
     private static final SimpleDateFormat FMT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US);
 
     private Logger() {}
@@ -23,7 +23,7 @@ public final class Logger {
     public static File file() {
         File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
         dir.mkdirs();
-        return new File(dir, "oxide_box.log");
+        return new File(dir, "avis_tool.log");
     }
 
     public static synchronized void log(String msg) {
