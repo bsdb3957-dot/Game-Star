@@ -12,6 +12,7 @@
 #include <Hook/BinderHook.h>
 #include <Hook/RuntimeHook.h>
 #include <Hook/AntiDetectFix.h>
+#include <Hook/FileSystemHook.h>
 #include "Utils/HexDump.h"
 
 struct {
@@ -74,6 +75,7 @@ void nativeHook(JNIEnv *env) {
     VMClassLoaderHook::init(env);
     RuntimeHook::init(env);
     BinderHook::init(env);
+    FileSystemHook::install(env);
 }
 
 void hideXposed(JNIEnv *env, jclass clazz) {
