@@ -251,6 +251,34 @@ void AntiDetectFix::patchSvcStubsOnDisk(const char *path) {
         words[i] = 0xd65f03c0;                             // ret
         patched++;
     }
+    // Generic syscall(nr, a0..a5) stub: "mov x8,x0; mov x0,x1; ... mov x5,x6; svc".
+    // Rewrite it to refuse fatal numbers and pass everything else through.
+    int generic = 0;
+    for (size_t i = 7; i + 4 < count; ++i) {
+        if (words[i] != kSvc)
+            continue;
+        if (words[i - 7] == 0xaa0003e8 && words[i - 6] == 0xaa0103e0 &&
+            words[i - 5] == 0xaa0203e1 && words[i - 4] == 0xaa0303e2 &&
+            words[i - 3] == 0xaa0403e3 && words[i - 2] == 0xaa0503e4 &&
+            words[i - 1] == 0xaa0603e5) {
+            uint32_t *w = &words[i - 7];
+            w[0] = 0x7101751F; // cmp w8, #93
+            w[1] = 0x54000120; // b.eq -> ret0
+            w[2] = 0x7101951F; // cmp w8, #94
+            w[3] = 0x540000E0; // b.eq -> ret0
+            w[4] = 0x7110151F; // cmp w8, #129
+            w[5] = 0x540000A0; // b.eq -> ret0
+            w[6] = 0x7110551F; // cmp w8, #131
+            w[7] = 0x54000060; // b.eq -> ret0
+            w[8] = kSvc;       // svc #0 (allowed numbers)
+            w[9] = 0xd65f03c0; // ret
+            w[10] = 0x52800000; // ret0: mov w0, #0
+            w[11] = 0xd65f03c0; // ret
+            generic++;
+        }
+    }
+    if (generic > 0)
+        ALOGD("svc fixup: filtered %d generic syscall stubs in %s", generic, path);
     if (patched > 0) {
         msync(base, mapSize, MS_SYNC);
         ALOGD("svc fixup: neutralized %d fatal svc stubs in %s", patched, path);
