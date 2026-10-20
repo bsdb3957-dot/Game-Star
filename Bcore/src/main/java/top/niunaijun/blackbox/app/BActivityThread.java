@@ -398,6 +398,10 @@ public class BActivityThread extends IBActivityThread.Stub {
         try {
             for (ProviderInfo providerInfo : provider) {
                 try {
+                    if (isAntiDetectProvider(providerInfo.name)) {
+                        Slog.w(TAG, "Skipping anti-detect ContentProvider: " + providerInfo.name);
+                        continue;
+                    }
                     if (processName.equals(providerInfo.processName) ||
                             providerInfo.processName.equals(context.getPackageName()) || providerInfo.multiprocess) {
                         installProvider(BlackBoxCore.mainThread(), context, providerInfo, null);
@@ -409,6 +413,15 @@ public class BActivityThread extends IBActivityThread.Stub {
             Binder.restoreCallingIdentity(origId);
             ContentProviderDelegate.init();
         }
+    }
+
+    private static boolean isAntiDetectProvider(String name) {
+        if (name == null) return false;
+        String s = name.toLowerCase();
+        return s.contains("hades") || s.contains("ztuni") || s.contains("securityguard")
+                || s.contains("avdetector") || s.contains("virtualdetect") || s.contains("sandboxdetect")
+                || s.contains("emulatordetect") || s.contains("fridadetect") || s.contains("hookdetect")
+                || s.contains("xposeddetect") || s.contains("magiskdetect") || s.contains("helium");
     }
 
     public Object getPackageInfo() {
