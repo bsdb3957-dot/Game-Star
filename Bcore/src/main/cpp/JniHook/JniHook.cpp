@@ -72,9 +72,12 @@ inline static bool HasAccessFlag(char *art_method, uint32_t flag) {
     return (flags & flag) == flag;
 }
 
+// Android 12+ marks methods with @FastNative/@CriticalNative. RegisterNatives on such
+// methods is unsafe unless these bits are removed, on every API level.
 inline static bool ClearFastNativeFlag(char *art_method) {
-    // FastNative
-    return HookEnv.api_level < __ANDROID_API_P__ && ClearAccessFlag(art_method, kAccFastNative);
+    bool changed = ClearAccessFlag(art_method, kAccFastNative);
+    changed |= ClearAccessFlag(art_method, kAccCriticalNative);
+    return changed;
 }
 
 static void *GetArtMethod(JNIEnv *env, jclass clazz, jmethodID methodId) {
@@ -144,8 +147,10 @@ JniHook::HookJniFun(JNIEnv *env, const char *class_name, const char *method_name
     };
 
     auto artMethod = reinterpret_cast<uintptr_t *>(GetArtMethod(env, clazz, method));
+    // Android 14+ may inline/replace platform natives (e.g. UnixFileSystem.canonicalize0);
+    // such methods are not JNI-native anymore and must be skipped instead of failing loudly.
     if (!CheckFlags(artMethod)) {
-        ALOGE("check flags error. class：%s, method：%s", class_name, method_name);
+        ALOGD("skip non-native method. class：%s, method：%s", class_name, method_name);
         return;
     }
     *orig_fun = reinterpret_cast<void *>(artMethod[HookEnv.art_method_native_offset]);
@@ -231,38 +236,41 @@ void JniHook::InitJniHook(JNIEnv *env, int api_level) {
         }
     }
 
-    uint32_t flags = 0x0;
-    flags = flags | kAccPublic;
-    flags = flags | kAccStatic;
-    flags = flags | kAccNative;
-    flags = flags | kAccFinal;
-    if (api_level >= __ANDROID_API_Q__) {
-        flags = flags | kAccPublicApi;
-    }
+    // ART on Android 12+ adds internal bits (kAccPreviouslyWarm etc.) to access flags,
+    // so probe with masked comparison on the dex-visible low bits only.
+    uint32_t methodFlags = kAccPublic | kAccStatic | kAccNative | kAccFinal;
 
     char *start = reinterpret_cast<char *>(artMethod);
     for (int i = 1; i < HookEnv.art_method_size; ++i) {
         auto value = *(uint32_t *) (start + i * sizeof(uint32_t));
-        if (value == flags) {
+        if ((value & kAccJavaFlagsMask) == (methodFlags & kAccJavaFlagsMask)
+            && (value & kAccNative)) {
             HookEnv.art_method_flags_offset = i * sizeof(uint32_t);
             break;
         }
     }
-
-    flags = 0x0;
-    flags = flags | kAccPublic;
-    flags = flags | kAccStatic;
-    flags = flags | kAccFinal;
-    if (api_level >= __ANDROID_API_Q__) {
-        flags = flags | kAccPublicApi;
+    if (HookEnv.art_method_flags_offset == 0) {
+        // Stable layout since Android 10: declaring_class(4), access_flags(4).
+        ALOGE("art method flags probe failed, fallback offset 4, api %d", api_level);
+        HookEnv.art_method_flags_offset = sizeof(uint32_t);
     }
+
+    uint32_t fieldFlags = kAccPublic | kAccStatic | kAccFinal;
     char *fieldStart = reinterpret_cast<char *>(nativeOffsetField);
     for (int i = 1; i < HookEnv.art_field_size; ++i) {
         auto value = *(int32_t *) (fieldStart + i * sizeof(int32_t));
-        if (value == flags) {
+        if (((uint32_t) value & kAccJavaFlagsMask) == (fieldFlags & kAccJavaFlagsMask)) {
             HookEnv.art_field_flags_offset = i * sizeof(int32_t);
             break;
         }
+    }
+    if (HookEnv.art_field_flags_offset == 0) {
+        ALOGE("art field flags probe failed, fallback offset 4, api %d", api_level);
+        HookEnv.art_field_flags_offset = sizeof(int32_t);
+    }
+
+    if (HookEnv.art_method_native_offset == 0) {
+        ALOGE("art method native entry probe failed, api %d", api_level);
     }
 
     HookEnv.method_utils_class = env->FindClass("top/niunaijun/jnihook/MethodUtils");
