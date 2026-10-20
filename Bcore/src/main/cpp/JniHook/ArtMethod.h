@@ -10,6 +10,10 @@
 #define __ANDROID_API_Q__ 29
 #define __ANDROID_API_P__ 28
 
+// Dex-visible access flags live in the low 16 bits; higher bits are ART-internal
+// (kAccFastNative, kAccPreviouslyWarm, kAccPublicApi, ...).
+static constexpr uint32_t kAccJavaFlagsMask = 0x0000FFFF;
+
 static constexpr uint32_t kAccPublic =       0x0001;  // class, field, method, ic
 static constexpr uint32_t kAccPrivate =      0x0002;  // field, method, ic
 static constexpr uint32_t kAccProtected =    0x0004;  // field, method, ic
