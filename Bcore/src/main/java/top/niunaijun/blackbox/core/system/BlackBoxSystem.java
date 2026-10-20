@@ -15,6 +15,8 @@ import top.niunaijun.blackbox.core.env.BEnvironment;
 import top.niunaijun.blackbox.core.system.accounts.BAccountManagerService;
 import top.niunaijun.blackbox.core.system.am.BActivityManagerService;
 import top.niunaijun.blackbox.core.system.am.BJobManagerService;
+import top.niunaijun.blackbox.core.system.am.PackageBroadcasts;
+import top.niunaijun.blackbox.core.system.am.VirtualBoot;
 import top.niunaijun.blackbox.core.system.location.BLocationManagerService;
 import top.niunaijun.blackbox.core.system.notification.BNotificationManagerService;
 import top.niunaijun.blackbox.core.system.os.BStorageManagerService;
@@ -73,6 +75,9 @@ public class BlackBoxSystem {
         for (ISystemService service : mServices) {
             service.systemReady();
         }
+
+        VirtualBoot.get().systemReady();
+        PackageBroadcasts.get().systemReady();
 
         List<String> preInstallPackages = AppSystemEnv.getPreInstallPackages();
         for (String preInstallPackage : preInstallPackages) {

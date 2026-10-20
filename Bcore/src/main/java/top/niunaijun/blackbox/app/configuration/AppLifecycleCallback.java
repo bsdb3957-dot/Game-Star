@@ -30,6 +30,14 @@ public class AppLifecycleCallback implements Application.ActivityLifecycleCallba
 
     }
 
+    public void beforeMainApplicationAttach(Application application, Context context) {
+
+    }
+
+    public void afterMainApplicationAttach(Application application, Context context) {
+
+    }
+
     @Override
     public void onActivityCreated(Activity activity, Bundle savedInstanceState) {
 
