@@ -72,9 +72,12 @@ inline static bool HasAccessFlag(char *art_method, uint32_t flag) {
     return (flags & flag) == flag;
 }
 
+// Android 12+ marks methods with @FastNative/@CriticalNative. RegisterNatives on such
+// methods is unsafe unless these bits are removed, on every API level.
 inline static bool ClearFastNativeFlag(char *art_method) {
-    // FastNative
-    return HookEnv.api_level < __ANDROID_API_P__ && ClearAccessFlag(art_method, kAccFastNative);
+    bool changed = ClearAccessFlag(art_method, kAccFastNative);
+    changed |= ClearAccessFlag(art_method, kAccCriticalNative);
+    return changed;
 }
 
 static void *GetArtMethod(JNIEnv *env, jclass clazz, jmethodID methodId) {
