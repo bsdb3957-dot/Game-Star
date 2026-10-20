@@ -1,0 +1,458 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout
+     xmlns:android="http://schemas.android.com/apk/res/android"
+     xmlns:app="http://schemas.android.com/apk/res-auto"
+     xmlns:tools="http://schemas.android.com/tools"
+     android:layout_height="match_parent"
+     android:layout_width="match_parent"
+     android:orientation="vertical">
+
+    <me.ibrahimsn.particle.ParticleView
+         android:layout_height="match_parent"
+         android:layout_width="match_parent"
+         app:particleColor="#9E9E9E"
+         app:particleMinRadius="3"
+         app:particleLinesEnabled="true"
+         app:particleCount="70"
+         app:particleLineColor="#316FFE"
+         app:particlesBackgroundColor="#181818"
+         android:id="@+id/particleView"
+         app:particleMaxRadius="15" />
+
+    <LinearLayout
+         android:layout_height="match_parent"
+         android:layout_width="match_parent"
+         android:padding="8dp"
+         android:orientation="vertical"
+         android:id="@+id/linear1">
+
+        <LinearLayout
+             android:layout_height="wrap_content"
+             android:layout_width="match_parent"
+             android:background="#202020"
+             android:orientation="vertical"
+             android:paddingBottom="8dp"
+             android:layout_marginLeft="10dp"
+             android:layout_marginRight="10dp"
+             android:id="@+id/linear_bg">
+
+            <TextView
+                 android:layout_height="wrap_content"
+                 android:layout_width="match_parent"
+                 android:background="#316FFE"
+                 android:gravity="center_horizontal|center_vertical"
+                 android:padding="5dp"
+                 android:textSize="16sp"
+                 android:textColor="#FFFFFF"
+                 android:id="@+id/textview1"
+                 android:text="KM Container" />
+
+            <TextView
+                 android:layout_height="wrap_content"
+                 android:layout_width="wrap_content"
+                 android:background="#303030"
+                 android:padding="8dp"
+                 android:textSize="12sp"
+                 android:layout_marginLeft="10dp"
+                 android:textColor="#FFFFFF"
+                 android:layout_marginTop="10dp"
+                 android:id="@+id/textview_ver"
+                 android:text="Version : 1.0.0" />
+
+            <TextView
+                 android:layout_height="wrap_content"
+                 android:layout_width="wrap_content"
+                 android:background="#303030"
+                 android:padding="8dp"
+                 android:textSize="12sp"
+                 android:layout_marginLeft="10dp"
+                 android:textColor="#FFFFFF"
+                 android:layout_marginTop="10dp"
+                 android:id="@+id/textview_dver"
+                 android:text="Daemon Version: 1.0.0" />
+
+        </LinearLayout>
+
+        <LinearLayout
+             android:layout_height="wrap_content"
+             android:layout_width="match_parent"
+             android:padding="8dp"
+             android:orientation="horizontal"
+             android:layout_weight="1"
+             android:id="@+id/bg">
+
+            <LinearLayout
+                 android:layout_height="match_parent"
+                 android:layout_width="match_parent"
+                 android:visibility="visible"
+                 android:padding="8dp"
+                 android:orientation="vertical"
+                 android:id="@+id/linear_games">
+
+                <LinearLayout
+                     android:layout_height="match_parent"
+                     android:layout_width="match_parent"
+                     android:padding="8dp"
+                     android:orientation="horizontal"
+                     android:id="@+id/linear_gamelist">
+
+                    <ScrollView
+                         android:layout_height="match_parent"
+                         android:layout_width="match_parent"
+                         android:id="@+id/vscroll1">
+
+                        <LinearLayout
+                             android:layout_height="wrap_content"
+                             android:layout_width="match_parent"
+                             android:padding="8dp"
+                             android:orientation="vertical"
+                             android:id="@+id/linear4">
+
+                            <LinearLayout
+                                 android:layout_height="wrap_content"
+                                 android:layout_width="match_parent"
+                                 android:background="#202020"
+                                 android:orientation="vertical"
+                                 android:id="@+id/bg_gl">
+
+                                <TextView
+                                     android:layout_height="wrap_content"
+                                     android:layout_width="match_parent"
+                                     android:gravity="center_horizontal"
+                                     android:textSize="12sp"
+                                     android:textColor="#FFFFFF"
+                                     android:id="@+id/textview5"
+                                     android:text="Oxide Survival Island" />
+
+                                <LinearLayout
+                                     android:layout_height="wrap_content"
+                                     android:layout_width="match_parent"
+                                     android:gravity="center_vertical"
+                                     android:padding="8dp"
+                                     android:orientation="horizontal"
+                                     android:id="@+id/linear6">
+
+                                    <LinearLayout
+                                         android:layout_height="80dp"
+                                         android:layout_width="80dp"
+                                         android:gravity="center_horizontal|center_vertical"
+                                         android:orientation="horizontal"
+                                         android:id="@+id/linear8">
+
+                                        <ImageView
+                                             android:layout_height="match_parent"
+                                             android:layout_width="match_parent"
+                                             android:src="@drawable/oxide"
+                                             android:scaleType="fitCenter"
+                                             android:id="@+id/imageview1" />
+
+                                    </LinearLayout>
+
+                                    <LinearLayout
+                                         android:layout_height="wrap_content"
+                                         android:layout_width="wrap_content"
+                                         android:padding="8dp"
+                                         android:orientation="vertical"
+                                         android:layout_weight="1"
+                                         android:id="@+id/linear9">
+
+                                        <TextView
+                                             android:layout_height="wrap_content"
+                                             android:layout_width="wrap_content"
+                                             android:background="#FF9800"
+                                             android:layout_margin="3dp"
+                                             android:textSize="12sp"
+                                             android:textColor="#FFFFFF"
+                                             android:id="@+id/textview_pkg"
+                                             android:text="Package : com.catsbit.oxidesurvivalisland" />
+
+                                        <TextView
+                                             android:layout_height="wrap_content"
+                                             android:layout_width="wrap_content"
+                                             android:background="#FF9800"
+                                             android:layout_margin="3dp"
+                                             android:textSize="12sp"
+                                             android:textColor="#FFFFFF"
+                                             android:id="@+id/textview_gver"
+                                             android:text="Version : 1.15" />
+
+                                        <TextView
+                                             android:layout_height="wrap_content"
+                                             android:layout_width="wrap_content"
+                                             android:background="#F44336"
+                                             android:layout_margin="3dp"
+                                             android:textSize="12sp"
+                                             android:textColor="#FFFFFF"
+                                             android:id="@+id/textview_status"
+                                             android:text="Status : Live" />
+
+                                    </LinearLayout>
+
+                                </LinearLayout>
+
+                                <LinearLayout
+                                     android:layout_height="wrap_content"
+                                     android:layout_width="match_parent"
+                                     android:gravity="center_horizontal|center_vertical"
+                                     android:orientation="horizontal"
+                                     android:paddingBottom="5dp"
+                                     android:id="@+id/linear7"
+                                     android:paddingTop="5dp">
+
+                                    <LinearLayout
+                                         android:layout_height="wrap_content"
+                                         android:layout_width="wrap_content"
+                                         android:background="#316FFE"
+                                         android:gravity="center_horizontal|center_vertical"
+                                         android:orientation="horizontal"
+                                         android:layout_marginLeft="10dp"
+                                         android:layout_marginRight="10dp"
+                                         android:layout_weight="1"
+                                         android:id="@+id/btn_install">
+
+                                        <TextView
+                                             android:layout_height="wrap_content"
+                                             android:layout_width="wrap_content"
+                                             android:padding="8dp"
+                                             android:textSize="12sp"
+                                             android:textColor="#FFFFFF"
+                                             android:id="@+id/textview9"
+                                             android:text="INSTALL" />
+
+                                    </LinearLayout>
+
+                                    <LinearLayout
+                                         android:layout_height="wrap_content"
+                                         android:layout_width="wrap_content"
+                                         android:background="#303030"
+                                         android:gravity="center_horizontal|center_vertical"
+                                         android:orientation="horizontal"
+                                         android:layout_marginLeft="10dp"
+                                         android:layout_marginRight="10dp"
+                                         android:layout_weight="1"
+                                         android:id="@+id/btn_uninstall">
+
+                                        <TextView
+                                             android:layout_height="wrap_content"
+                                             android:layout_width="wrap_content"
+                                             android:padding="8dp"
+                                             android:textSize="12sp"
+                                             android:textColor="#FFFFFF"
+                                             android:id="@+id/textview10"
+                                             android:text="UNINSTALL" />
+
+                                    </LinearLayout>
+
+                                </LinearLayout>
+
+                            </LinearLayout>
+
+                        </LinearLayout>
+
+                    </ScrollView>
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <LinearLayout
+                 android:layout_height="match_parent"
+                 android:layout_width="match_parent"
+                 android:visibility="gone"
+                 android:padding="8dp"
+                 android:orientation="vertical"
+                 android:id="@+id/linear_settings">
+
+                <TextView
+                     android:layout_height="wrap_content"
+                     android:layout_width="wrap_content"
+                     android:padding="8dp"
+                     android:textSize="12sp"
+                     android:textColor="#9E9E9E"
+                     android:id="@+id/textview11"
+                     android:text="Extra Applications" />
+
+                <LinearLayout
+                     android:layout_height="wrap_content"
+                     android:layout_width="match_parent"
+                     android:background="#202020"
+                     android:padding="8dp"
+                     android:orientation="horizontal"
+                     android:id="@+id/linear12">
+
+                    <LinearLayout
+                         android:layout_height="wrap_content"
+                         android:layout_width="wrap_content"
+                         android:background="#303030"
+                         android:gravity="center_horizontal|center_vertical"
+                         android:padding="8dp"
+                         android:orientation="vertical"
+                         android:layout_marginLeft="10dp"
+                         android:layout_marginRight="10dp"
+                         android:layout_weight="1"
+                         android:id="@+id/linear_twitter">
+
+                        <ImageView
+                             android:layout_height="50dp"
+                             android:layout_width="50dp"
+                             android:src="@drawable/xtwitter"
+                             android:scaleType="fitCenter"
+                             android:id="@+id/imageview5" />
+
+                        <TextView
+                             android:layout_height="wrap_content"
+                             android:layout_width="wrap_content"
+                             android:background="#F44336"
+                             android:textSize="12sp"
+                             android:textColor="#FFFFFF"
+                             android:layout_marginTop="5dp"
+                             android:id="@+id/t1"
+                             android:text="Not installed" />
+
+                    </LinearLayout>
+
+                    <LinearLayout
+                         android:layout_height="wrap_content"
+                         android:layout_width="wrap_content"
+                         android:background="#303030"
+                         android:gravity="center_horizontal|center_vertical"
+                         android:padding="8dp"
+                         android:orientation="vertical"
+                         android:layout_marginRight="10dp"
+                         android:layout_weight="1"
+                         android:id="@+id/linear_fb">
+
+                        <ImageView
+                             android:layout_height="50dp"
+                             android:layout_width="50dp"
+                             android:src="@drawable/fbio"
+                             android:scaleType="fitCenter"
+                             android:id="@+id/imageview6" />
+
+                        <TextView
+                             android:layout_height="wrap_content"
+                             android:layout_width="wrap_content"
+                             android:background="#F44336"
+                             android:textSize="12sp"
+                             android:textColor="#FFFFFF"
+                             android:layout_marginTop="5dp"
+                             android:id="@+id/t2"
+                             android:text="Not Installed" />
+
+                    </LinearLayout>
+
+                    <LinearLayout
+                         android:layout_height="wrap_content"
+                         android:layout_width="wrap_content"
+                         android:background="#303030"
+                         android:gravity="center_horizontal|center_vertical"
+                         android:padding="8dp"
+                         android:orientation="vertical"
+                         android:layout_marginRight="10dp"
+                         android:layout_weight="1"
+                         android:id="@+id/linear_injector">
+
+                        <ImageView
+                             android:layout_height="50dp"
+                             android:layout_width="50dp"
+                             android:src="@drawable/menu_ic__1"
+                             android:scaleType="fitCenter"
+                             android:id="@+id/imageview7" />
+
+                        <TextView
+                             android:layout_height="wrap_content"
+                             android:layout_width="wrap_content"
+                             android:background="#F44336"
+                             android:textSize="12sp"
+                             android:textColor="#FFFFFF"
+                             android:layout_marginTop="5dp"
+                             android:id="@+id/t3"
+                             android:text="Not Installed" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+                <Button
+                     android:layout_height="40dp"
+                     android:layout_width="match_parent"
+                     android:background="#4caf50"
+                     android:layout_marginRight="10dp"
+                     android:layout_marginLeft="10dp"
+                     android:textColor="#FFFFFF"
+                     android:layout_marginTop="15dp"
+                     android:text="Uninstall All"
+                     android:id="@+id/btn_all" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <LinearLayout
+             android:layout_height="wrap_content"
+             android:layout_width="match_parent"
+             android:background="#202020"
+             android:padding="8dp"
+             android:orientation="horizontal"
+             android:id="@+id/linear11">
+
+            <LinearLayout
+                 android:layout_height="match_parent"
+                 android:layout_width="wrap_content"
+                 android:gravity="center_horizontal|center_vertical"
+                 android:padding="8dp"
+                 android:orientation="horizontal"
+                 android:layout_weight="1"
+                 android:id="@+id/linear_home">
+
+                <ImageView
+                     android:layout_height="30dp"
+                     android:layout_width="30dp"
+                     android:src="@drawable/ic_home_white"
+                     android:scaleType="fitCenter"
+                     android:id="@+id/imageview2" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                 android:layout_height="match_parent"
+                 android:layout_width="wrap_content"
+                 android:gravity="center_horizontal|center_vertical"
+                 android:padding="8dp"
+                 android:orientation="horizontal"
+                 android:layout_weight="1"
+                 android:id="@+id/linear_set">
+
+                <ImageView
+                     android:layout_height="30dp"
+                     android:layout_width="30dp"
+                     android:src="@drawable/ic_now_widgets_white"
+                     android:scaleType="fitCenter"
+                     android:id="@+id/imageview3" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                 android:layout_height="match_parent"
+                 android:layout_width="wrap_content"
+                 android:visibility="gone"
+                 android:gravity="center_horizontal|center_vertical"
+                 android:padding="8dp"
+                 android:orientation="horizontal"
+                 android:layout_weight="1"
+                 android:id="@+id/linear_updaye">
+
+                <ImageView
+                     android:layout_height="30dp"
+                     android:layout_width="30dp"
+                     android:src="@drawable/ic_file_download_white"
+                     android:scaleType="fitCenter"
+                     android:id="@+id/imageview4" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</FrameLayout>

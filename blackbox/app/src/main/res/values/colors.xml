@@ -1,0 +1,8 @@
+<resources>
+    <color name="ink">#111114</color>
+    <color name="ink_soft">#6B6B75</color>
+    <color name="ink_hint">#9A9AA3</color>
+    <color name="surface">#F4F4F6</color>
+    <color name="line">#E6E6EA</color>
+    <color name="danger">#C62828</color>
+</resources>
