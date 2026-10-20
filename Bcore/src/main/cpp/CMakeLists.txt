@@ -17,6 +17,8 @@ aux_source_directory(Utils SRC2)
 aux_source_directory(Hook SRC3)
 aux_source_directory(JniHook SRC4)
 add_compile_options(-w)
+# Android 15+ devices may run with 16 KB pages; align LOAD segments accordingly.
+add_link_options(-Wl,-z,max-page-size=16384)
 add_library( # Sets the name of the library.
         ABridge
         # Sets the library as a shared library.
