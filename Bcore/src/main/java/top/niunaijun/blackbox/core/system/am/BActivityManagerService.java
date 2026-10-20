@@ -11,11 +11,15 @@ import android.os.Bundle;
 import android.os.IBinder;
 import android.os.RemoteException;
 
+import java.io.File;
+import java.security.SecureRandom;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.core.env.BEnvironment;
 import top.niunaijun.blackbox.core.system.BProcessManagerService;
 import top.niunaijun.blackbox.core.system.ISystemService;
 import top.niunaijun.blackbox.core.system.ProcessRecord;
@@ -26,6 +30,8 @@ import top.niunaijun.blackbox.entity.am.PendingResultData;
 import top.niunaijun.blackbox.entity.am.ReceiverData;
 import top.niunaijun.blackbox.entity.am.RunningAppProcessInfo;
 import top.niunaijun.blackbox.entity.am.RunningServiceInfo;
+import top.niunaijun.blackbox.utils.FileUtils;
+import top.niunaijun.blackbox.utils.ShellUtils;
 import top.niunaijun.blackbox.utils.Slog;
 
 import static android.content.pm.PackageManager.GET_META_DATA;
@@ -44,6 +50,8 @@ public class BActivityManagerService extends IBActivityManagerService.Stub imple
     private final Map<Integer, UserSpace> mUserSpace = new HashMap<>();
     private final BPackageManagerService mPms = BPackageManagerService.get();
     private final BroadcastManager mBroadcastManager;
+    private final ConcurrentHashMap<String, String> mGuestAndroidId = new ConcurrentHashMap<>();
+    private volatile boolean mGuestAndroidIdLoaded = false;
 
     public static BActivityManagerService get() {
         return sService;
@@ -51,6 +59,70 @@ public class BActivityManagerService extends IBActivityManagerService.Stub imple
 
     public BActivityManagerService() {
         mBroadcastManager = BroadcastManager.startSystem(this, mPms);
+    }
+
+    private File guestAndroidIdFile() {
+        return new File(BEnvironment.getSystemDir(), "guest_android_id.conf");
+    }
+
+    private synchronized void loadGuestAndroidIdLocked() {
+        if (mGuestAndroidIdLoaded) {
+            return;
+        }
+        mGuestAndroidIdLoaded = true;
+        try {
+            File file = guestAndroidIdFile();
+            if (file.exists()) {
+                for (String line : FileUtils.readToString(file.getAbsolutePath()).split(ShellUtils.COMMAND_LINE_END)) {
+                    int splitAt = line.indexOf('=');
+                    if (splitAt > 0) {
+                        mGuestAndroidId.put(line.substring(0, splitAt), line.substring(splitAt + 1));
+                    }
+                }
+            }
+        } catch (Throwable e) {
+        }
+    }
+
+    private void persistGuestAndroidIdLocked() {
+        try {
+            StringBuilder sb = new StringBuilder();
+            for (Map.Entry<String, String> entry : mGuestAndroidId.entrySet()) {
+                sb.append(entry.getKey()).append('=').append(entry.getValue()).append('\n');
+            }
+            File file = guestAndroidIdFile();
+            file.getParentFile().mkdirs();
+            FileUtils.writeToFile(sb.toString().getBytes(), file);
+        } catch (Throwable e) {
+        }
+    }
+
+    @Override
+    public synchronized String getGuestAndroidId(int userId, String packageName) {
+        if (packageName == null) {
+            return null;
+        }
+        try {
+            loadGuestAndroidIdLocked();
+            String key = userId + ":" + packageName;
+            String existing = mGuestAndroidId.get(key);
+            if (existing != null) {
+                return existing;
+            }
+            byte[] raw = new byte[8];
+            new SecureRandom().nextBytes(raw);
+            StringBuilder sb = new StringBuilder();
+            for (byte b : raw) {
+                sb.append(String.format("%02x", b));
+            }
+            String androidId = sb.toString();
+            mGuestAndroidId.put(key, androidId);
+            persistGuestAndroidIdLocked();
+            return androidId;
+        } catch (Throwable e) {
+            Slog.e(TAG, "getGuestAndroidId", e);
+            return null;
+        }
     }
 
     @Override
