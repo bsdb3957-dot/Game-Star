@@ -290,4 +290,13 @@ public class BActivityManager extends BlackManager<IBActivityManagerService> {
         }
         return -1;
     }
+
+    public String getGuestAndroidId(int userId, String packageName) {
+        try {
+            return getService().getGuestAndroidId(userId, packageName);
+        } catch (RemoteException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
 }
