@@ -1,36 +1,25 @@
-apply plugin: 'com.android.application'
-apply plugin: 'org.lsposed.lsparanoid'
-apply plugin: 'top.niunaijun.blackobfuscator'
+plugins {
+    id 'com.android.application'
+}
 
 android {
-
-    compileSdkVersion 34
-    buildToolsVersion "34.0.4"
-    namespace "com.dms.container"
+    compileSdkVersion 30
+    buildToolsVersion "30.0.3"
 
     defaultConfig {
-        applicationId "com.pubg.imobile.ctn"
-        minSdk 23
-        //noinspection ExpiredTargetSdkVersion
-        targetSdk 28
+        applicationId "com.avis.tool"
+        minSdkVersion 21
+        targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
-       ndk{
-           
-        abiFilters "arm64-v8a"
-            }
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
     }
 
     buildTypes {
-        debug {
-        defaultConfig.applicationId = "com.pubg"
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-        }
         release {
-        defaultConfig.applicationId = "com.pubg"
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.debug
         }
     }
@@ -39,37 +28,13 @@ android {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
-
-    BlackObfuscator {
-        enabled true
-        depth 2
-        obfClass = ["com.dms.container"]
+    lintOptions {
+        checkReleaseBuilds false
+        abortOnError false
     }
-
-    lsparanoid {
-        seed = 1919810
-        global = false
-        includeDependencies = false
-        variantFilter = { true }
-    }
-
-    externalNativeBuild {
-        ndkBuild {
-            path "src/main/jni/Android.mk"
-            version "3.22.1"
-        }
-    }
-    ndkVersion '24.0.8215888'
-
 }
 
 dependencies {
-    implementation fileTree(dir: "libs", include: ["*.jar", "*.aar"])
-    implementation "com.tencent:mmkv-static:1.2.10"
-    implementation "com.google.code.gson:gson:2.9.1"
-    implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.9.0'
-    implementation 'com.github.ibrahimsn98:android-particles:2.0'
-    implementation group: 'commons-io', name: 'commons-io', version: '2.11.0'
-
+    implementation project(':Bcore')
+    implementation 'androidx.appcompat:appcompat:1.2.0'
 }
