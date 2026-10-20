@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout
+     xmlns:android="http://schemas.android.com/apk/res/android"
+     xmlns:app="http://schemas.android.com/apk/res-auto"
+     xmlns:tools="http://schemas.android.com/tools"
+     android:layout_height="match_parent"
+     android:layout_width="match_parent"
+     android:orientation="vertical">
+
+    <me.ibrahimsn.particle.ParticleView
+         android:layout_height="match_parent"
+         android:layout_width="match_parent"
+         app:particleColor="#9E9E9E"
+         app:particleMinRadius="3"
+         app:particleLinesEnabled="true"
+         app:particleCount="70"
+         app:particleLineColor="#316FFE"
+         app:particlesBackgroundColor="#181818"
+         android:id="@+id/particleView"
+         app:particleMaxRadius="10" />
+
+    <LinearLayout
+         android:layout_height="match_parent"
+         android:layout_width="match_parent"
+         android:padding="8dp"
+         android:orientation="vertical"
+         android:id="@+id/linear1">
+
+        <LinearLayout
+             android:layout_height="wrap_content"
+             android:layout_width="match_parent"
+             android:gravity="center_horizontal|center_vertical"
+             android:padding="8dp"
+             android:orientation="vertical"
+             android:layout_weight="1"
+             android:id="@+id/linear2">
+
+            <TextView
+                 android:layout_height="wrap_content"
+                 android:layout_width="wrap_content"
+                 android:padding="8dp"
+                 android:textSize="16sp"
+                 android:textColor="#316ffe"
+                 android:id="@+id/textview4"
+                 android:text="BGMI LOADER" />
+
+        </LinearLayout>
+
+        <LinearLayout
+             android:layout_height="wrap_content"
+             android:layout_width="match_parent"
+             android:padding="8dp"
+             android:orientation="vertical"
+             android:layout_weight="1"
+             android:id="@+id/linear3">
+
+            <LinearLayout
+                 android:layout_height="wrap_content"
+                 android:layout_width="match_parent"
+                 android:background="#202020"
+                 android:orientation="vertical"
+                 android:layout_marginLeft="10dp"
+                 android:layout_marginRight="10dp"
+                 android:id="@+id/linear_key">
+
+                <TextView
+                     android:layout_height="wrap_content"
+                     android:layout_width="wrap_content"
+                     android:background="#316FFE"
+                     android:padding="8dp"
+                     android:textSize="12sp"
+                     android:textColor="#FFFFFF"
+                     android:id="@+id/textview2"
+                     android:text="User Token" />
+
+                <LinearLayout
+                     android:layout_height="wrap_content"
+                     android:layout_width="match_parent"
+                     android:padding="8dp"
+                     android:orientation="horizontal"
+                     android:id="@+id/linear7">
+
+                    <EditText
+                         android:layout_height="wrap_content"
+                         android:layout_width="wrap_content"
+                         android:background="@android:color/transparent"
+                         android:padding="8dp"
+                         android:textColorHint="#FFFFFF"
+                         android:textSize="12sp"
+                         android:textColor="#FFFFFF"
+                         android:layout_weight="1"
+                         android:id="@+id/edittext1" />
+
+                    <LinearLayout
+                         android:layout_height="40dp"
+                         android:layout_width="40dp"
+                         android:background="#404040"
+                         android:padding="8dp"
+                         android:orientation="horizontal"
+                         android:id="@+id/linear_paste">
+
+                        <ImageView
+                             android:layout_height="match_parent"
+                             android:layout_width="match_parent"
+                             android:src="@drawable/ic_content_paste_white"
+                             android:scaleType="fitCenter"
+                             android:id="@+id/ic_paste" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <LinearLayout
+                 android:layout_height="wrap_content"
+                 android:layout_width="match_parent"
+                 android:background="#202020"
+                 android:orientation="vertical"
+                 android:layout_marginLeft="10dp"
+                 android:layout_marginRight="10dp"
+                 android:layout_marginTop="10dp"
+                 android:id="@+id/linear_ref">
+
+                <TextView
+                     android:layout_height="wrap_content"
+                     android:layout_width="wrap_content"
+                     android:background="#316FFE"
+                     android:padding="8dp"
+                     android:textSize="12sp"
+                     android:textColor="#FFFFFF"
+                     android:id="@+id/textview3"
+                     android:text="Refferal Code" />
+
+                <LinearLayout
+                     android:layout_height="wrap_content"
+                     android:layout_width="match_parent"
+                     android:padding="8dp"
+                     android:orientation="horizontal"
+                     android:id="@+id/linear8">
+
+                    <EditText
+                         android:layout_height="wrap_content"
+                         android:layout_width="wrap_content"
+                         android:background="@android:color/transparent"
+                         android:hint="dms-v6-428"
+                         android:padding="8dp"
+                         android:textColorHint="#FFFFFF"
+                         android:textSize="12sp"
+                         android:textColor="#FFFFFF"
+                         android:layout_weight="1"
+                         android:id="@+id/edittext2" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <Button
+                 android:layout_height="40dp"
+                 android:layout_width="match_parent"
+                 android:background="#202020"
+                 android:textSize="12sp"
+                 android:layout_marginLeft="50dp"
+                 android:layout_marginRight="50dp"
+                 android:textColor="#FFFFFF"
+                 android:layout_marginTop="20dp"
+                 android:id="@+id/button1"
+                 android:text="Validate " />
+
+        </LinearLayout>
+
+        <LinearLayout
+             android:layout_height="wrap_content"
+             android:layout_width="match_parent"
+             android:gravity="center_horizontal"
+             android:padding="8dp"
+             android:orientation="horizontal"
+             android:layout_weight="1"
+             android:id="@+id/linear4">
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</FrameLayout>
