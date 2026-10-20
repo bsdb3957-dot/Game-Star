@@ -3,6 +3,7 @@ package top.niunaijun.blackbox.core.system.am;
 
 import android.content.Intent;
 import android.content.ComponentName;
+import android.net.Uri;
 import android.content.pm.ServiceInfo;
 import android.content.pm.ProviderInfo;
 import android.os.IBinder;
@@ -20,6 +21,11 @@ import top.niunaijun.blackbox.entity.am.RunningServiceInfo;
 interface IBActivityManagerService {
     AppConfig initProcess(String packageName, String processName, int userId);
     void restartProcess(String packageName, String processName, int userId);
+    int getBUidByPid(int pid);
+
+    void registerContentObserver(in Uri uri, boolean descendants, IBinder observer, int userId);
+    void notifyContentChange(in Uri uri, IBinder observer, boolean selfChange, int userId);
+    void unregisterContentObserver(IBinder observer);
 
     void startActivity(in Intent intent, int userId);
     int startActivityAms(int userId, in Intent intent, String resolvedType, IBinder resultTo, String resultWho, int requestCode, int flags, in Bundle options);
@@ -54,6 +60,8 @@ interface IBActivityManagerService {
 
     String getCallingPackage(in IBinder token, int userId);
     ComponentName getCallingActivity(in IBinder token, int userId);
+
+    String getGuestAndroidId(int userId, String packageName);
 
     void getIntentSender(in IBinder target, String packageName, int uid, int userId);
     String getPackageForIntentSender(in IBinder target, int userId);
