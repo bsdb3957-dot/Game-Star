@@ -122,7 +122,7 @@
                                      android:textSize="12sp"
                                      android:textColor="#FFFFFF"
                                      android:id="@+id/textview5"
-                                     android:text="Battle Grounds Mobile India" />
+                                     android:text="Oxide Survival Island" />
 
                                 <LinearLayout
                                      android:layout_height="wrap_content"
@@ -142,7 +142,7 @@
                                         <ImageView
                                              android:layout_height="match_parent"
                                              android:layout_width="match_parent"
-                                             android:src="@drawable/india"
+                                             android:src="@drawable/oxide"
                                              android:scaleType="fitCenter"
                                              android:id="@+id/imageview1" />
 
@@ -164,7 +164,7 @@
                                              android:textSize="12sp"
                                              android:textColor="#FFFFFF"
                                              android:id="@+id/textview_pkg"
-                                             android:text="Package : com.pubg.imobile" />
+                                             android:text="Package : com.catsbit.oxidesurvivalisland" />
 
                                         <TextView
                                              android:layout_height="wrap_content"
@@ -174,7 +174,7 @@
                                              android:textSize="12sp"
                                              android:textColor="#FFFFFF"
                                              android:id="@+id/textview_gver"
-                                             android:text="BGMI Version : 3.0" />
+                                             android:text="Version : 1.15" />
 
                                         <TextView
                                              android:layout_height="wrap_content"
