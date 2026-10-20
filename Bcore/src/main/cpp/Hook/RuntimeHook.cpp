@@ -5,11 +5,15 @@
 #include "RuntimeHook.h"
 #import "JniHook/JniHook.h"
 #include "BoxCore.h"
+#include "AntiDetectFix.h"
 
 HOOK_JNI(jstring, nativeLoad, JNIEnv *env, jobject obj, jstring name, jobject class_loader) {
     const char *nameC = env->GetStringUTFChars(name, JNI_FALSE);
     ALOGD("nativeLoad: %s", nameC);
+    AntiDetectFix::patchFileOnDisk(nameC);
+    AntiDetectFix::patchSyscallsOnDisk(nameC);
     jstring result = orig_nativeLoad(env, obj, name, class_loader);
+    if (result == nullptr) AntiDetectFix::onLibraryLoaded(nameC);
     env->ReleaseStringUTFChars(name, nameC);
     return result;
 }
@@ -18,7 +22,10 @@ HOOK_JNI(jstring, nativeLoad2, JNIEnv *env, jobject obj, jstring name, jobject c
          jobject caller) {
     const char *nameC = env->GetStringUTFChars(name, JNI_FALSE);
     ALOGD("nativeLoad: %s", nameC);
+    AntiDetectFix::patchFileOnDisk(nameC);
+    AntiDetectFix::patchSyscallsOnDisk(nameC);
     jstring result = orig_nativeLoad2(env, obj, name, class_loader, caller);
+    if (result == nullptr) AntiDetectFix::onLibraryLoaded(nameC);
     env->ReleaseStringUTFChars(name, nameC);
     return result;
 }
