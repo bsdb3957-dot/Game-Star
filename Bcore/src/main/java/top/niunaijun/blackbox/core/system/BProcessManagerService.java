@@ -21,6 +21,7 @@ import java.util.Set;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.core.IBActivityThread;
+import top.niunaijun.blackbox.core.NativeCore;
 import top.niunaijun.blackbox.core.env.BEnvironment;
 import top.niunaijun.blackbox.core.system.notification.BNotificationManagerService;
 import top.niunaijun.blackbox.core.system.pm.BPackageManagerService;
@@ -43,6 +44,8 @@ import top.niunaijun.blackbox.utils.provider.ProviderCall;
  */
 public class BProcessManagerService implements ISystemService {
     public static final String TAG = "BProcessManager";
+    private static final int START_ATTEMPTS = 3;
+    private static final long START_WAIT_MS = 20000;
 
     public static BProcessManagerService sBProcessManagerService = new BProcessManagerService();
     private final Map<Integer, Map<String, ProcessRecord>> mProcessMap = new HashMap<>();
@@ -54,54 +57,97 @@ public class BProcessManagerService implements ISystemService {
     }
 
     public ProcessRecord startProcessLocked(String packageName, String processName, int userId, int bpid, int callingPid) {
-        ApplicationInfo info = BPackageManagerService.get().getApplicationInfo(packageName, 0, userId);
+        ApplicationInfo info = null;
+        for (int i = 0; i < START_ATTEMPTS && info == null; i++) {
+            info = BPackageManagerService.get().getApplicationInfo(packageName, i, userId);
+        }
         if (info == null)
             return null;
-        ProcessRecord app;
         int buid = BUserHandle.getUid(userId, BPackageManagerService.get().getAppId(packageName));
-        synchronized (mProcessLock) {
-            Map<String, ProcessRecord> bProcess = mProcessMap.get(buid);
 
-            if (bProcess == null) {
-                bProcess = new HashMap<>();
-            }
-            if (bpid == -1) {
+        for (int attempt = 0; attempt < START_ATTEMPTS; attempt++) {
+            ProcessRecord app;
+            synchronized (mProcessLock) {
+                Map<String, ProcessRecord> bProcess = mProcessMap.get(buid);
+                if (bProcess == null) {
+                    bProcess = new HashMap<>();
+                }
                 app = bProcess.get(processName);
+                if (app != null && bpid != -1 && app.bpid != bpid && isAttached(app)) {
+                    // the restarted stub pid takes over the process name
+                    Slog.w(TAG, "restarted stub p" + bpid + " takes " + processName
+                            + " while p" + app.bpid + " still runs it");
+                    app = null;
+                }
                 if (app != null) {
-                    if (app.initLock != null) {
-                        app.initLock.block();
+                    if (app.starting) {
+                        // another thread is starting it, wait for the attach
+                    } else if (isAttached(app)) {
+                        return app;
+                    } else {
+                        forgetLocked(app);
                     }
-                    if (app.bActivityThread != null) {
+                    app.initLock.block(START_WAIT_MS);
+                    if (isAttached(app)) {
+                        return app;
+                    }
+                    forgetLocked(app);
+                    app = null;
+                }
+                if (app == null) {
+                    int usingBpid = bpid == -1 ? getUsingBPidL() : bpid;
+                    if (usingBpid == -1) {
+                        throw new RuntimeException("No processes available");
+                    }
+                    Slog.d(TAG, "init bUid = " + buid + ", bPid = " + usingBpid);
+                    app = new ProcessRecord(info, processName);
+                    app.uid = Process.myUid();
+                    app.bpid = usingBpid;
+                    app.buid = BPackageManagerService.get().getAppId(packageName);
+                    app.callingBUid = getBUidByPidOrPackageName(callingPid, packageName);
+                    app.userId = userId;
+                    app.starting = true;
+                    synchronized (mProcessMap) {
+                        bProcess.put(processName, app);
+                        mProcessMap.put(buid, bProcess);
+                    }
+                    synchronized (mPidsSelfLocked) {
+                        mPidsSelfLocked.add(app);
+                    }
+
+                    boolean started;
+                    try {
+                        started = initAppProcessL(app);
+                    } catch (Throwable t) {
+                        Slog.w(TAG, "start of " + processName + " failed: " + t);
+                        started = false;
+                    }
+
+                    synchronized (mProcessLock) {
+                        app.starting = false;
+                        if (started) {
+                            int pid = getPid(BlackBoxCore.getContext(), ProxyManifest.getProcessName(app.bpid));
+                            app.pid = pid;
+                            if (!isAttached(app)) {
+                                forgetLocked(app);
+                                started = false;
+                            } else if (!isMappedLocked(app)) {
+                                // the record was replaced while starting
+                                app.kill();
+                                forgetLocked(app);
+                                started = false;
+                            }
+                        } else {
+                            forgetLocked(app);
+                        }
+                    }
+                    app.initLock.open();
+                    if (started) {
                         return app;
                     }
                 }
-                bpid = getUsingBPidL();
-                Slog.d(TAG, "init bUid = " + buid + ", bPid = " + bpid);
             }
-            if (bpid == -1) {
-                throw new RuntimeException("No processes available");
-            }
-            app = new ProcessRecord(info, processName);
-            app.uid = Process.myUid();
-            app.bpid = bpid;
-            app.buid = BPackageManagerService.get().getAppId(packageName);
-            app.callingBUid = getBUidByPidOrPackageName(callingPid, packageName);
-            app.userId = userId;
-
-            bProcess.put(processName, app);
-            mPidsSelfLocked.add(app);
-
-            synchronized (mProcessMap) {
-                mProcessMap.put(buid, bProcess);
-            }
-            if (!initAppProcessL(app)) {
-                //init process fail
-                bProcess.remove(processName);
-                mPidsSelfLocked.remove(app);
-                app = null;
-            } else {
-                app.pid = getPid(BlackBoxCore.getContext(), ProxyManifest.getProcessName(app.bpid));
-            }
+            SystemClock.sleep(300);
         }
         return app;
     }
@@ -114,6 +160,11 @@ public class BProcessManagerService implements ISystemService {
             int i = parseBPid(runningAppProcess.processName);
             usingPs.add(i);
         }
+        synchronized (mPidsSelfLocked) {
+            for (ProcessRecord record : mPidsSelfLocked) {
+                usingPs.add(record.bpid);
+            }
+        }
         for (int i = 0; i < ProxyManifest.FREE_COUNT; i++) {
             if (usingPs.contains(i)) {
                 continue;
@@ -121,6 +172,34 @@ public class BProcessManagerService implements ISystemService {
             return i;
         }
         return -1;
+    }
+
+    private static boolean isAttached(ProcessRecord record) {
+        IBActivityThread thread = record.bActivityThread;
+        return thread != null && thread.asBinder().isBinderAlive();
+    }
+
+    private boolean isMappedLocked(ProcessRecord record) {
+        synchronized (mProcessMap) {
+            Map<String, ProcessRecord> map = mProcessMap.get(BUserHandle.getUid(record.userId, record.buid));
+            return map != null && map.get(record.processName) == record;
+        }
+    }
+
+    private void forgetLocked(ProcessRecord record) {
+        int uid = BUserHandle.getUid(record.userId, record.buid);
+        synchronized (mProcessMap) {
+            Map<String, ProcessRecord> map = mProcessMap.get(uid);
+            if (map != null && map.get(record.processName) == record) {
+                map.remove(record.processName);
+                if (map.isEmpty()) {
+                    mProcessMap.remove(uid);
+                }
+            }
+        }
+        synchronized (mPidsSelfLocked) {
+            mPidsSelfLocked.remove(record);
+        }
     }
 
     public void restartAppProcess(String packageName, String processName, int userId) {
@@ -197,18 +276,24 @@ public class BProcessManagerService implements ISystemService {
     }
 
     public void onProcessDie(ProcessRecord record) {
+        if (record.pid > 0) {
+            NativeCore.unregisterGuestPid(record.pid);
+        }
         synchronized (mProcessLock) {
             record.kill();
-            Map<String, ProcessRecord> process = mProcessMap.get(record.buid);
-            if (process != null) {
-                process.remove(record.processName);
-                if (process.isEmpty()) {
-                    mProcessMap.remove(record.buid);
+            forgetLocked(record);
+            boolean bpidStillUsed = false;
+            synchronized (mPidsSelfLocked) {
+                for (ProcessRecord other : mPidsSelfLocked) {
+                    if (other.bpid == record.bpid) {
+                        bpidStillUsed = true;
+                        break;
+                    }
                 }
             }
-            mPidsSelfLocked.remove(record);
-
-            removeProc(record);
+            if (!bpidStillUsed) {
+                removeProc(record);
+            }
             BNotificationManagerService.get().deletePackageNotification(record.getPackageName(), record.userId);
         }
     }
