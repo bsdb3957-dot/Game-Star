@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">KM-Container</string>
+    <string name="app_name">Oxide Survival Island</string>
     <string name="demo_obtain_permission_success_hint">Obtained %s successfully</string>
     <string name="demo_return_activity_result_hint">Detected that you just returned from the permission settings interface</string>
 
