@@ -2,6 +2,7 @@ package top.niunaijun.blackbox;
 
 import android.annotation.SuppressLint;
 import android.app.ActivityManager;
+import android.app.Application;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -30,6 +31,7 @@ import black.android.app.BRActivityThread;
 import black.android.os.BRUserHandle;
 import me.weishu.reflection.Reflection;
 import top.canyie.pine.PineConfig;
+import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.app.LauncherActivity;
 import top.niunaijun.blackbox.app.configuration.AppLifecycleCallback;
 import top.niunaijun.blackbox.app.configuration.ClientConfiguration;
@@ -42,6 +44,7 @@ import top.niunaijun.blackbox.core.system.user.BUserInfo;
 import top.niunaijun.blackbox.entity.pm.InstallOption;
 import top.niunaijun.blackbox.entity.pm.InstallResult;
 import top.niunaijun.blackbox.entity.pm.InstalledModule;
+import top.niunaijun.blackbox.entity.AppConfig;
 import top.niunaijun.blackbox.fake.delegate.ContentProviderDelegate;
 import top.niunaijun.blackbox.fake.frameworks.BActivityManager;
 import top.niunaijun.blackbox.fake.frameworks.BJobManager;
@@ -81,6 +84,12 @@ public class BlackBoxCore extends ClientConfiguration {
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private final int mHostUid = Process.myUid();
     private final int mHostUserId = BRUserHandle.get().myUserId();
+    private boolean mServicesInitialized;
+    private final List<Runnable> mServiceAvailableCallbacks = new ArrayList<>();
+    private final Object mServiceCallbackLock = new Object();
+    private int mCurrentAppUid = -1;
+    private String mCurrentAppPackage;
+    private boolean mIsSandboxedEnvironment;
 
     public static BlackBoxCore get() {
         return sBlackBoxCore;
@@ -106,6 +115,87 @@ public class BlackBoxCore extends ClientConfiguration {
         return get().mHostUserId;
     }
 
+    public static AppConfig getAppConfig() {
+        try {
+            return BActivityThread.getAppConfig();
+        } catch (Throwable t) {
+            Slog.w(TAG, "BActivityThread.getAppConfig() failed, returning null", t);
+            return null;
+        }
+    }
+
+    public static String getAppPackageName() {
+        try {
+            return BActivityThread.getAppPackageName();
+        } catch (Throwable t) {
+            Slog.w(TAG, "BActivityThread.getAppPackageName() failed, returning null", t);
+            return null;
+        }
+    }
+
+    public static int getAppPid() {
+        try {
+            return BActivityThread.getAppPid();
+        } catch (Throwable t) {
+            Slog.w(TAG, "BActivityThread.getAppPid() failed, returning -1", t);
+            return -1;
+        }
+    }
+
+    public static String getAppProcessName() {
+        try {
+            return BActivityThread.getAppProcessName();
+        } catch (Throwable t) {
+            Slog.w(TAG, "BActivityThread.getAppProcessName() failed, returning null", t);
+            return null;
+        }
+    }
+
+    public static Application getApplication() {
+        try {
+            return BActivityThread.getApplication();
+        } catch (Throwable t) {
+            Slog.w(TAG, "BActivityThread.getApplication() failed, returning null", t);
+            return null;
+        }
+    }
+
+    public static int getBUid() {
+        try {
+            return BActivityThread.getBUid();
+        } catch (Throwable t) {
+            Slog.w(TAG, "BActivityThread.getBUid() failed, returning -1", t);
+            return -1;
+        }
+    }
+
+    public static int getCallingBUid() {
+        try {
+            return BActivityThread.getCallingBUid();
+        } catch (Throwable t) {
+            Slog.w(TAG, "BActivityThread.getCallingBUid() failed, returning -1", t);
+            return -1;
+        }
+    }
+
+    public static int getUid() {
+        try {
+            return BActivityThread.getUid();
+        } catch (Throwable t) {
+            Slog.w(TAG, "BActivityThread.getUid() failed, returning -1", t);
+            return -1;
+        }
+    }
+
+    public static int getUserId() {
+        try {
+            return BActivityThread.getUserId();
+        } catch (Throwable t) {
+            Slog.w(TAG, "BActivityThread.getUserId() failed, returning -1", t);
+            return -1;
+        }
+    }
+
     public static Context getContext() {
         return sContext;
     }
@@ -119,10 +209,7 @@ public class BlackBoxCore extends ClientConfiguration {
     }
 
     public void doAttachBaseContext(Context context, ClientConfiguration clientConfiguration) {
-        if (clientConfiguration == null) {
-            throw new IllegalArgumentException("ClientConfiguration is null!");
-        }
-        Reflection.unseal(context);
+        setEssentialProperties(context, clientConfiguration);
         sContext = context;
         mClientConfiguration = clientConfiguration;
         initNotificationManager();
@@ -166,6 +253,7 @@ public class BlackBoxCore extends ClientConfiguration {
         }
         if (!isServerProcess()) {
             ServiceManager.initBlackManager();
+            markServicesInitialized();
         }
     }
 
@@ -327,6 +415,51 @@ public class BlackBoxCore extends ClientConfiguration {
         return mAppLifecycleCallbacks;
     }
 
+    public void onBeforeMainApplicationAttach(Application application, Context context) {
+        for (AppLifecycleCallback callback : get().getAppLifecycleCallbacks()) {
+            callback.beforeMainApplicationAttach(application, context);
+        }
+    }
+
+    public void onAfterMainApplicationAttach(Application application, Context context) {
+        for (AppLifecycleCallback callback : get().getAppLifecycleCallbacks()) {
+            callback.afterMainApplicationAttach(application, context);
+        }
+    }
+
+    /** Records the real (possibly sandboxed) host uid of the running app. */
+    public void setCurrentAppUid(int uid, String packageName) {
+        mCurrentAppUid = uid;
+        mCurrentAppPackage = packageName;
+        if (uid == mHostUid || uid <= Process.FIRST_APPLICATION_UID || uid >= Process.LAST_APPLICATION_UID) {
+            return;
+        }
+        mIsSandboxedEnvironment = true;
+        Slog.d(TAG, "detected sandboxed environment for " + packageName + " with UID: " + uid);
+    }
+
+    public int getCurrentAppUid() {
+        return mCurrentAppUid;
+    }
+
+    public String getCurrentAppPackage() {
+        return mCurrentAppPackage;
+    }
+
+    /**
+     * Remaps host app-range uids onto the sandboxed app's uid; system and
+     * isolated uids pass through untouched.
+     */
+    public int resolveUidForOperation(int uid, String packageName) {
+        if ((uid <= 0 || uid >= Process.FIRST_APPLICATION_UID) && uid <= Process.LAST_APPLICATION_UID) {
+            if (mIsSandboxedEnvironment && mCurrentAppUid > 0) {
+                Slog.d(TAG, "Resolving UID for " + packageName + ": " + uid + " -> " + mCurrentAppUid);
+                return mCurrentAppUid;
+            }
+        }
+        return uid;
+    }
+
     public void removeAppLifecycleCallback(AppLifecycleCallback appLifecycleCallback) {
         mAppLifecycleCallbacks.remove(appLifecycleCallback);
     }
@@ -364,6 +497,66 @@ public class BlackBoxCore extends ClientConfiguration {
         Slog.d(TAG, "getService: " + name + ", " + binder);
         mServices.put(name, binder);
         return binder;
+    }
+
+    public void addServiceAvailableCallback(Runnable callback) {
+        synchronized (mServiceCallbackLock) {
+            if (mServicesInitialized) {
+                callback.run();
+            } else {
+                mServiceAvailableCallbacks.add(callback);
+            }
+        }
+    }
+
+    public void removeServiceAvailableCallback(Runnable callback) {
+        synchronized (mServiceCallbackLock) {
+            mServiceAvailableCallbacks.remove(callback);
+        }
+    }
+
+    private void notifyServiceAvailableCallbacks() {
+        synchronized (mServiceCallbackLock) {
+            if (mServiceAvailableCallbacks.isEmpty()) {
+                return;
+            }
+            Slog.d(TAG, "notifying " + mServiceAvailableCallbacks.size() + " service available callbacks");
+            for (Runnable callback : mServiceAvailableCallbacks) {
+                try {
+                    callback.run();
+                } catch (Throwable t) {
+                    Slog.e(TAG, "error in service available callback", t);
+                }
+            }
+            mServiceAvailableCallbacks.clear();
+        }
+    }
+
+    private void markServicesInitialized() {
+        synchronized (mServiceCallbackLock) {
+            if (mServicesInitialized) {
+                return;
+            }
+            mServicesInitialized = true;
+        }
+        notifyServiceAvailableCallbacks();
+    }
+
+    public boolean areServicesAvailable() {
+        if (mServicesInitialized) {
+            return true;
+        }
+        String[] names = {ServiceManager.ACTIVITY_MANAGER, ServiceManager.PACKAGE_MANAGER,
+                ServiceManager.STORAGE_MANAGER, ServiceManager.USER_MANAGER, ServiceManager.JOB_MANAGER,
+                ServiceManager.ACCOUNT_MANAGER, ServiceManager.LOCATION_MANAGER, ServiceManager.NOTIFICATION_MANAGER};
+        for (String name : names) {
+            IBinder binder = getService(name);
+            if (binder == null || !binder.isBinderAlive()) {
+                return false;
+            }
+        }
+        markServicesInitialized();
+        return true;
     }
 
     /**
@@ -427,18 +620,23 @@ public class BlackBoxCore extends ClientConfiguration {
 
     private static String getProcessName(Context context) {
         int pid = Process.myPid();
-        String processName = null;
-        ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
-        for (ActivityManager.RunningAppProcessInfo info : am.getRunningAppProcesses()) {
-            if (info.pid == pid) {
-                processName = info.processName;
-                break;
+        List<ActivityManager.RunningAppProcessInfo> processes = null;
+        try {
+            ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+            if (am != null) {
+                processes = am.getRunningAppProcesses();
+            }
+        } catch (Throwable t) {
+            Slog.w(TAG, "getRunningAppProcesses failed", t);
+        }
+        if (processes != null) {
+            for (ActivityManager.RunningAppProcessInfo info : processes) {
+                if (info.pid == pid && info.processName != null) {
+                    return info.processName;
+                }
             }
         }
-        if (processName == null) {
-            throw new RuntimeException("processName = null");
-        }
-        return processName;
+        throw new RuntimeException("processName = null");
     }
 
     public static boolean is64Bit() {
