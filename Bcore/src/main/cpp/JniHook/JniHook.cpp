@@ -222,6 +222,10 @@ void JniHook::InitJniHook(JNIEnv *env, int api_level) {
     void *nativeOffset2 = GetArtMethod(env, clazz, nativeOffset2Id);
     HookEnv.art_method_size = (size_t) nativeOffset2 - (size_t) nativeOffset;
 
+    ALOGD("api=%d art_method_size=%u art_field_size=%u nativeOffset=%p nativeOffset2=%p",
+          api_level, HookEnv.art_method_size, HookEnv.art_field_size, nativeOffset,
+          nativeOffset2);
+
     // calc native offset
     auto artMethod = reinterpret_cast<uintptr_t *>(nativeOffset);
     for (int i = 0; i < HookEnv.art_method_size; ++i) {
@@ -230,6 +234,8 @@ void JniHook::InitJniHook(JNIEnv *env, int api_level) {
             break;
         }
     }
+    ALOGD("art_method_native_offset=%d entrypoint=%p", HookEnv.art_method_native_offset,
+          native_offset);
 
     uint32_t flags = 0x0;
     flags = flags | kAccPublic;
@@ -248,6 +254,8 @@ void JniHook::InitJniHook(JNIEnv *env, int api_level) {
             break;
         }
     }
+    ALOGD("art_method_flags_offset=%d want=%08x (method)", HookEnv.art_method_flags_offset,
+          flags);
 
     flags = 0x0;
     flags = flags | kAccPublic;
