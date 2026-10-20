@@ -122,8 +122,8 @@ public class FileCopyTask {
                     builder.setPositiveButton("OK", null);
                     builder.setCancelable(false);
                     builder.show();
-                    //FCore.get().installPackageAsUser("com.pubg.imobile",0);
-                    MetaApplicationInstaller.cloneApp("com.pubg.imobile");
+                    //FCore.get().installPackageAsUser("com.catsbit.oxidesurvivalisland",0);
+                    MetaApplicationInstaller.cloneApp("com.catsbit.oxidesurvivalisland");
                     // File successfully copied
                 } else {
                     AlertDialog.Builder builder = new AlertDialog.Builder(context);
