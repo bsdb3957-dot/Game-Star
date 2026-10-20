@@ -363,6 +363,11 @@
             android:process="@string/black_box_service_name" />
 
         <service
+            android:name="top.niunaijun.blackbox.core.system.ServerAnchorService"
+            android:exported="false"
+            android:process="@string/black_box_service_name" />
+
+        <service
             android:name="top.niunaijun.blackbox.core.system.DaemonService$DaemonInnerService"
             android:exported="false"
             android:process="@string/black_box_service_name" />
