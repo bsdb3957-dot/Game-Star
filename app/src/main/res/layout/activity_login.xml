@@ -42,7 +42,7 @@
                  android:textSize="16sp"
                  android:textColor="#316ffe"
                  android:id="@+id/textview4"
-                 android:text="BGMI LOADER" />
+                 android:text="OXIDE LOADER" />
 
         </LinearLayout>
 
