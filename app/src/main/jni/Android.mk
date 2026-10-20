@@ -43,5 +43,3 @@ LOCAL_STATIC_LIBRARIES					:= libcurl \
                                            libcrypto \
 
 include $(BUILD_SHARED_LIBRARY)
-
-include $(LOCAL_PATH)/inject/inject.mk
