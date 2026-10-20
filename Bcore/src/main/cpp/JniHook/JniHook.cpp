@@ -222,6 +222,10 @@ void JniHook::InitJniHook(JNIEnv *env, int api_level) {
     void *nativeOffset2 = GetArtMethod(env, clazz, nativeOffset2Id);
     HookEnv.art_method_size = (size_t) nativeOffset2 - (size_t) nativeOffset;
 
+    ALOGD("api=%d art_method_size=%u art_field_size=%u nativeOffset=%p nativeOffset2=%p",
+          api_level, HookEnv.art_method_size, HookEnv.art_field_size, nativeOffset,
+          nativeOffset2);
+
     // calc native offset
     auto artMethod = reinterpret_cast<uintptr_t *>(nativeOffset);
     for (int i = 0; i < HookEnv.art_method_size; ++i) {
@@ -230,36 +234,28 @@ void JniHook::InitJniHook(JNIEnv *env, int api_level) {
             break;
         }
     }
+    ALOGD("art_method_native_offset=%d entrypoint=%p", HookEnv.art_method_native_offset,
+          native_offset);
 
-    uint32_t flags = 0x0;
-    flags = flags | kAccPublic;
-    flags = flags | kAccStatic;
-    flags = flags | kAccNative;
-    flags = flags | kAccFinal;
-    if (api_level >= __ANDROID_API_Q__) {
-        flags = flags | kAccPublicApi;
-    }
-
+    // Runtime flag bits (kAccPublicApi, kAccFastNative, preverified, ...) vary across
+    // ART versions, so match on the stable low 16 dex bits instead of the full value.
+    uint32_t method_flags = kAccPublic | kAccStatic | kAccNative | kAccFinal;
     char *start = reinterpret_cast<char *>(artMethod);
     for (int i = 1; i < HookEnv.art_method_size; ++i) {
         auto value = *(uint32_t *) (start + i * sizeof(uint32_t));
-        if (value == flags) {
+        if ((value & 0xFFFF) == method_flags) {
             HookEnv.art_method_flags_offset = i * sizeof(uint32_t);
             break;
         }
     }
+    ALOGD("art_method_flags_offset=%d want=%08x (method)",
+          HookEnv.art_method_flags_offset, method_flags);
 
-    flags = 0x0;
-    flags = flags | kAccPublic;
-    flags = flags | kAccStatic;
-    flags = flags | kAccFinal;
-    if (api_level >= __ANDROID_API_Q__) {
-        flags = flags | kAccPublicApi;
-    }
+    uint32_t field_flags = kAccPublic | kAccStatic | kAccFinal;
     char *fieldStart = reinterpret_cast<char *>(nativeOffsetField);
     for (int i = 1; i < HookEnv.art_field_size; ++i) {
         auto value = *(int32_t *) (fieldStart + i * sizeof(int32_t));
-        if (value == flags) {
+        if (((uint32_t) value & 0xFFFF) == field_flags) {
             HookEnv.art_field_flags_offset = i * sizeof(int32_t);
             break;
         }
