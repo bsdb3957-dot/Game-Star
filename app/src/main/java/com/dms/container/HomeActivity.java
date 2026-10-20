@@ -122,7 +122,7 @@ private Timer _timer = new Timer();
 int Obb_Permission = 112;
     int Storage_Permission = 142;
 	//FCore fcore;
-    String[] gamePackage = {"com.pubg.imobile","com.katana.facebook","com.twitter.android","com.dms.loader"};
+    String[] gamePackage = {"com.catsbit.oxidesurvivalisland","com.katana.facebook","com.twitter.android","com.dms.loader"};
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -133,8 +133,8 @@ int Obb_Permission = 112;
         drawabls();
             
       /*  try{
-        File sourfeFile = new File ("/storage/emulated/0/Android/obb/com.pubg.imobile/main.17925.com.pubg.imobile.obb");
-        File outout = new File("/storage/emulated/0/vSdcard/Android/obb/com.pubg.imobile/main.17925.com.pubg.imobile.obb");
+        File sourfeFile = new File ("/storage/emulated/0/Android/obb/com.catsbit.oxidesurvivalisland/main.17925.com.catsbit.oxidesurvivalisland.obb");
+        File outout = new File("/storage/emulated/0/vSdcard/Android/obb/com.catsbit.oxidesurvivalisland/main.17925.com.catsbit.oxidesurvivalisland.obb");
           //  copyFile(sourfeFile,outout);
         Files.copy(sourfeFile.toPath(),outout.toPath(),StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException i){
@@ -159,7 +159,7 @@ int Obb_Permission = 112;
             btn_install.setVisibility(View.VISIBLE);
             btn_uninstall.setVisibility(View.GONE);
             EXECUTE_CODE = 0;
-            openobb("com.pubg.imobile");
+            openobb("com.catsbit.oxidesurvivalisland");
          }
            if(isGameInstalled(gamePackage[2])){
                t1.setText("Installed");
@@ -187,13 +187,13 @@ int Obb_Permission = 112;
     btn_install.setOnClickListener(new View.OnClickListener(){
         public void onClick(View v){
                             if(EXECUTE_CODE == 0){
-                   /*     if(copyObb(HomeActivity.this,game.getString("obburi",""),"","/vSdcard/Android/obb/com.pubg.imobile/")){
+                   /*     if(copyObb(HomeActivity.this,game.getString("obburi",""),"","/vSdcard/Android/obb/com.catsbit.oxidesurvivalisland/")){
                             showMessage("done");
                         } else {
                             showMessage("error");
                         }*/
                         FileCopyTask fctask = new FileCopyTask(HomeActivity.this);
-                           fctask.copyObbAsync(game.getString("obburi",""),"main.18325.com.pubg.imobile.obb","/vSdcard/Android/obb/com.pubg.imobile/");
+                           fctask.copyObbAsync(game.getString("obburi",""),"main.18325.com.catsbit.oxidesurvivalisland.obb","/vSdcard/Android/obb/com.catsbit.oxidesurvivalisland/");
                        /*      try{
                                  
                           
