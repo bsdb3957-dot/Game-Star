@@ -8,9 +8,13 @@ import android.os.Bundle;
 import android.os.IBinder;
 import android.os.RemoteException;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.core.system.ServiceManager;
 import top.niunaijun.blackbox.core.system.am.IBActivityManagerService;
+import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.entity.AppConfig;
 import top.niunaijun.blackbox.entity.UnbindRecord;
 import top.niunaijun.blackbox.entity.am.PendingResultData;
@@ -27,6 +31,7 @@ import top.niunaijun.blackbox.entity.am.RunningServiceInfo;
  */
 public class BActivityManager extends BlackManager<IBActivityManagerService> {
     private static final BActivityManager sActivityManager = new BActivityManager();
+    private static final Map<Integer, Integer> sBUidByPid = new HashMap<>();
 
     public static BActivityManager get() {
         return sActivityManager;
@@ -52,6 +57,30 @@ public class BActivityManager extends BlackManager<IBActivityManagerService> {
         } catch (RemoteException e) {
             e.printStackTrace();
         }
+    }
+
+    public int getBUidByPid(int pid) {
+        if (pid <= 0) {
+            return -1;
+        }
+        synchronized (sBUidByPid) {
+            Integer cached = sBUidByPid.get(pid);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        int bUidByPid = -1;
+        try {
+            bUidByPid = getService().getBUidByPid(pid);
+        } catch (RemoteException e) {
+            Slog.w("BActivityManager", "getBUidByPid(" + pid + ") failed", e);
+        }
+        if (bUidByPid > 0) {
+            synchronized (sBUidByPid) {
+                sBUidByPid.put(pid, bUidByPid);
+            }
+        }
+        return bUidByPid;
     }
 
     public void startActivity(Intent intent, int userId) {
@@ -289,5 +318,14 @@ public class BActivityManager extends BlackManager<IBActivityManagerService> {
             e.printStackTrace();
         }
         return -1;
+    }
+
+    public String getGuestAndroidId(int userId, String packageName) {
+        try {
+            return getService().getGuestAndroidId(userId, packageName);
+        } catch (RemoteException e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 }
