@@ -17,6 +17,13 @@ public:
     static jstring redirectPathString(JNIEnv *env, jstring path);
     static jobject redirectPathFile(JNIEnv *env, jobject path);
     static jlongArray loadEmptyDex(JNIEnv *env);
+
+    // guest identity: pid -> virtual uid map plus this process's own guest uid
+    static void putGuestPid(int pid, int uid);
+    static void removeGuestPid(int pid);
+    static void setSelfUid(int uid);
+    static int getGuestUidByPid(int pid);
+    static int getSelfGuestUid();
 };
 
 
