@@ -254,7 +254,7 @@ void AntiDetectFix::patchSvcStubsOnDisk(const char *path) {
     // Generic syscall(nr, a0..a5) stub: "mov x8,x0; mov x0,x1; ... mov x5,x6; svc".
     // Rewrite it to refuse fatal numbers and pass everything else through.
     int generic = 0;
-    for (size_t i = 7; i + 4 < count; ++i) {
+    for (size_t i = 7; i + 19 < count; ++i) {
         if (words[i] != kSvc)
             continue;
         if (words[i - 7] == 0xaa0003e8 && words[i - 6] == 0xaa0103e0 &&
@@ -262,18 +262,27 @@ void AntiDetectFix::patchSvcStubsOnDisk(const char *path) {
             words[i - 3] == 0xaa0403e3 && words[i - 2] == 0xaa0503e4 &&
             words[i - 1] == 0xaa0603e5) {
             uint32_t *w = &words[i - 7];
-            w[0] = 0x7101751F; // cmp w8, #93
-            w[1] = 0x54000120; // b.eq -> ret0
-            w[2] = 0x7101951F; // cmp w8, #94
-            w[3] = 0x540000E0; // b.eq -> ret0
-            w[4] = 0x7110151F; // cmp w8, #129
-            w[5] = 0x540000A0; // b.eq -> ret0
-            w[6] = 0x7110551F; // cmp w8, #131
-            w[7] = 0x54000060; // b.eq -> ret0
-            w[8] = kSvc;       // svc #0 (allowed numbers)
-            w[9] = 0xd65f03c0; // ret
-            w[10] = 0x52800000; // ret0: mov w0, #0
-            w[11] = 0xd65f03c0; // ret
+            // Fatal numbers arrive in x0 (shifted before x8); others run the
+            // original arg shuffle + svc. Branch offsets are byte offsets / 4.
+            w[0] = 0x7101741F; // cmp w0, #93
+            w[1] = 0x540001C0; // b.eq -> ret0
+            w[2] = 0x7101941F; // cmp w0, #94
+            w[3] = 0x54000180; // b.eq -> ret0
+            w[4] = 0x7110151F; // cmp w0, #129
+            w[5] = 0x54000140; // b.eq -> ret0
+            w[6] = 0x7110541F; // cmp w0, #131
+            w[7] = 0x54000100; // b.eq -> ret0
+            w[8] = 0xaa0003e8; // mov x8, x0
+            w[9] = 0xaa0103e0; // mov x0, x1
+            w[10] = 0xaa0203e1; // mov x1, x2
+            w[11] = 0xaa0303e2; // mov x2, x3
+            w[12] = 0xaa0403e3; // mov x3, x4
+            w[13] = 0xaa0503e4; // mov x4, x5
+            w[14] = 0xaa0603e5; // mov x5, x6
+            // w[15] is the original svc (words[i]) — falls through to it
+            w[16] = 0xd65f03c0; // ret (after svc)
+            w[17] = 0x52800000; // ret0: mov w0, #0
+            w[18] = 0xd65f03c0; // ret
             generic++;
         }
     }
