@@ -7,8 +7,13 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Set;
+import java.util.Collections;
 
 import top.niunaijun.blackbox.utils.MethodParameterUtils;
+import top.niunaijun.blackbox.utils.Slog;
+import top.niunaijun.blackbox.utils.MethodReturnTypes;
 
 /**
  * Created by Milk on 3/30/21.
@@ -46,10 +51,31 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
         onlyProxy = o;
     }
 
+    private static final class TypedResultHandler implements InvocationHandler {
+        private final ClassInvocationStub stub;
+
+        TypedResultHandler(ClassInvocationStub stub) {
+            this.stub = stub;
+        }
+
+        @Override
+        public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+            Object result = stub.invoke(proxy, method, args);
+            if (!MethodReturnTypes.isUnboxableNull(method, result)) {
+                return result;
+            }
+            return MethodReturnTypes.defaultValue(method);
+        }
+    }
+
     @Override
     public void injectHook() {
-        mBase = getWho();
-        mProxyInvocation = Proxy.newProxyInstance(mBase.getClass().getClassLoader(), MethodParameterUtils.getAllInterface(mBase.getClass()), this);
+        Object who = getWho();
+        if (who == null) {
+            return;
+        }
+        mBase = who;
+        mProxyInvocation = Proxy.newProxyInstance(mBase.getClass().getClassLoader(), MethodParameterUtils.getAllInterface(mBase.getClass()), new TypedResultHandler(this));
         if (!onlyProxy) {
             inject(mBase, mProxyInvocation);
         }
@@ -106,11 +132,7 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
         MethodHook methodHook = mMethodHookMap.get(method.getName());
         if (methodHook == null || !methodHook.isEnable()) {
-            try {
-                return method.invoke(mBase, args);
-            } catch (Throwable e) {
-                throw e.getCause();
-            }
+            return invokeReflected(method, args);
         }
 
         Object result = methodHook.beforeHook(mBase, method, args);
@@ -120,5 +142,22 @@ public abstract class ClassInvocationStub implements InvocationHandler, IInjectH
         result = methodHook.hook(mBase, method, args);
         result = methodHook.afterHook(result);
         return result;
+    }
+
+    private static final Set<String> sRefusedLogged = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+
+    private Object invokeReflected(Method method, Object[] args) throws Throwable {
+        try {
+            return method.invoke(mBase, args);
+        } catch (Throwable e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            if (!(cause instanceof SecurityException) || !BlackBoxCore.get().isBlackProcess()) {
+                throw cause;
+            }
+            if (sRefusedLogged.add(getClass().getSimpleName() + "." + method.getName())) {
+                Slog.w(TAG, getClass().getSimpleName() + "." + method.getName() + " refused for a guest, answering empty");
+            }
+            return MethodReturnTypes.emptyOf(method);
+        }
     }
 }
