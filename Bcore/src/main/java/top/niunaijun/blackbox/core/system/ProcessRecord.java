@@ -26,6 +26,9 @@ public class ProcessRecord extends Binder {
 
     public ConditionVariable initLock = new ConditionVariable();
 
+    /** true while another thread is starting this process. */
+    public volatile boolean starting;
+
     public ProcessRecord(ApplicationInfo info, String processName) {
         this.info = info;
         this.processName = processName;
