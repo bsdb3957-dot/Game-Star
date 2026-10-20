@@ -10,12 +10,14 @@ import android.content.ComponentName;
 import android.content.ContentProviderClient;
 import android.content.Context;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ProviderInfo;
 import android.content.pm.ServiceInfo;
+import android.os.Process;
 import android.os.Binder;
 import android.os.Build;
 import android.os.ConditionVariable;
@@ -26,10 +28,13 @@ import android.os.Looper;
 import android.os.RemoteException;
 import android.os.StrictMode;
 import android.text.TextUtils;
+import android.util.Log;
 import android.webkit.WebView;
 
 import java.io.File;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import dalvik.system.BaseDexClassLoader;
 import java.security.Security;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -63,6 +68,7 @@ import top.niunaijun.blackbox.core.IBActivityThread;
 import top.niunaijun.blackbox.core.IOCore;
 import top.niunaijun.blackbox.core.NativeCore;
 import top.niunaijun.blackbox.core.env.VirtualRuntime;
+import top.niunaijun.blackbox.core.system.ServerAnchorService;
 import top.niunaijun.blackbox.core.system.user.BUserHandle;
 import top.niunaijun.blackbox.entity.AppConfig;
 import top.niunaijun.blackbox.entity.am.ReceiverData;
@@ -97,6 +103,16 @@ public class BActivityThread extends IBActivityThread.Stub {
     private final List<ProviderInfo> mProviders = new ArrayList<>();
     private final Handler mH = BlackBoxCore.get().getHandler();
     private static final Object mConfigLock = new Object();
+    private static boolean sAnchored;
+    private static final ServiceConnection sServerAnchor = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+        }
+    };
 
     public static boolean isThreadInit() {
         return sBActivityThread != null;
@@ -178,6 +194,7 @@ public class BActivityThread extends IBActivityThread.Stub {
                 throw new RuntimeException("reject init process: " + appConfig.processName + ", this process is : " + this.mAppConfig.processName);
             }
             this.mAppConfig = appConfig;
+            NativeCore.registerGuestPid(Process.myPid(), appConfig.buid);
             IBinder iBinder = asBinder();
             try {
                 iBinder.linkToDeath(new DeathRecipient() {
@@ -301,6 +318,7 @@ public class BActivityThread extends IBActivityThread.Stub {
             CrashHandler.create();
         } catch (Throwable ignored) {
         }
+        anchorServer();
 
         PackageInfo packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(packageName, PackageManager.GET_PROVIDERS, BActivityThread.getUserId());
         ApplicationInfo applicationInfo = packageInfo.applicationInfo;
@@ -316,6 +334,7 @@ public class BActivityThread extends IBActivityThread.Stub {
         BRLoadedApk.get(loadedApk)._set_mSecurityViolation(false);
         // fix applicationInfo
         BRLoadedApk.get(loadedApk)._set_mApplicationInfo(applicationInfo);
+        attachSharedLibraries(loadedApk, applicationInfo);
 
         int targetSdkVersion = applicationInfo.targetSdkVersion;
         if (targetSdkVersion < Build.VERSION_CODES.GINGERBREAD) {
@@ -356,6 +375,7 @@ public class BActivityThread extends IBActivityThread.Stub {
         activityThreadAppBindData._set_providers(bindData.providers);
 
         mBoundApplication = bindData;
+        NativeCore.setGuestSelfUid(getBAppId());
 
         //ssl适配
         if (BRNetworkSecurityConfigProvider.getRealClass() != null) {
@@ -365,6 +385,7 @@ public class BActivityThread extends IBActivityThread.Stub {
         Application application;
         try {
             onBeforeCreateApplication(packageName, processName, packageContext);
+            unredactGuestLogging(packageName);
             application = BRLoadedApk.get(loadedApk).makeApplication(false, null);
             mInitialApplication = application;
             BRActivityThread.get(BlackBoxCore.mainThread())._set_mInitialApplication(mInitialApplication);
@@ -380,6 +401,67 @@ public class BActivityThread extends IBActivityThread.Stub {
         } catch (Exception e) {
             e.printStackTrace();
             throw new RuntimeException("Unable to makeApplication", e);
+        }
+    }
+
+    /**
+     * Keeps a sticky binding to a service hosted in the server process, so the
+     * system never tears the server down while guests are alive.
+     */
+    private static void anchorServer() {
+        if (sAnchored) {
+            return;
+        }
+        try {
+            Context context = BlackBoxCore.getContext();
+            sAnchored = context.bindService(
+                    new Intent(context, ServerAnchorService.class),
+                    sServerAnchor,
+                    Context.BIND_AUTO_CREATE | Context.BIND_NOT_FOREGROUND);
+        } catch (Throwable t) {
+            Slog.w(TAG, "cannot anchor the server: " + t);
+        }
+    }
+
+    private static void attachSharedLibraries(Object loadedApk, ApplicationInfo applicationInfo) {
+        String[] sharedLibraryFiles = applicationInfo.sharedLibraryFiles;
+        if (sharedLibraryFiles == null || sharedLibraryFiles.length == 0) {
+            return;
+        }
+        try {
+            ClassLoader classLoader = BRLoadedApk.get(loadedApk).getClassLoader();
+            if (!(classLoader instanceof BaseDexClassLoader)) {
+                return;
+            }
+            Method addDexPath = BaseDexClassLoader.class.getDeclaredMethod("addDexPath", String.class);
+            addDexPath.setAccessible(true);
+            for (String path : sharedLibraryFiles) {
+                if (path != null && new File(path).exists()) {
+                    addDexPath.invoke(classLoader, path);
+                    Slog.d(TAG, "attached shared library " + path);
+                }
+            }
+        } catch (Throwable t) {
+            Slog.w(TAG, "unable to attach shared libraries", t);
+        }
+    }
+
+    /**
+     * Build.TYPE stays "user" on release hosts, which makes the framework
+     * redact parts of guest logcats; flipping it restores full logging.
+     * Enabled by the GuestUnredact system property.
+     */
+    private void unredactGuestLogging(String packageName) {
+        if (!Log.isLoggable("GuestUnredact", Log.DEBUG)) {
+            return;
+        }
+        try {
+            Field type = Build.class.getDeclaredField("TYPE");
+            type.setAccessible(true);
+            type.set(null, "userdebug");
+            Slog.d(TAG, "unredacted logging for " + packageName + ", Build.TYPE=" + Build.TYPE);
+        } catch (Throwable t) {
+            Slog.w(TAG, "could not set Build.TYPE for " + packageName, t);
         }
     }
 
