@@ -71,7 +71,7 @@ void nativeHook(JNIEnv *env) {
     BaseHook::init(env);
     UnixFileSystemHook::init(env);
     VMClassLoaderHook::init(env);
-//    RuntimeHook::init(env);
+    RuntimeHook::init(env);
     BinderHook::init(env);
 }
 
