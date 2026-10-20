@@ -12,8 +12,8 @@ android {
 
         consumerProguardFiles "consumer-rules.pro"
         ndk {
-            // 设置支持的SO库架构
-            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86'
+            // app is arm64-only; Dobby's 32-bit ARM paths don't build on newer Dobby
+            abiFilters 'arm64-v8a'
         }
     }
 

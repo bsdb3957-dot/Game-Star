@@ -79,11 +79,13 @@ public class NativeUtils {
             File libFile = new File(nativeLibDir, libName);
             if (libFile.exists() && libFile.length() == entry.getSize()) {
                 Log.d(TAG, libName + " skip copy");
+                patchProtectionLib(libFile);
                 continue;
             }
             FileOutputStream fos = new FileOutputStream(libFile);
             Log.d(TAG, "copy so " + entry.getName() + " of " + cpuArch);
             copySo(buffer, zipfile.getInputStream(entry), fos);
+            patchProtectionLib(libFile);
         }
 
         if (!findLib) {
@@ -92,6 +94,17 @@ public class NativeUtils {
         }
 
         return findSo;
+    }
+
+    // The guest protection loader kills the process when it detects the box.
+    // Neutralize its crash/kill gadgets in the extracted copy right after install.
+    private static void patchProtectionLib(File libFile) {
+        if (!"libloader.so".equals(libFile.getName())) return;
+        try {
+            top.niunaijun.blackbox.core.NativeCore.patchLoaderLib(libFile.getAbsolutePath());
+        } catch (Throwable t) {
+            Log.d(TAG, "patchProtectionLib failed: " + t);
+        }
     }
 
     private static void copySo(byte[] buffer, InputStream input, OutputStream output) throws IOException {
