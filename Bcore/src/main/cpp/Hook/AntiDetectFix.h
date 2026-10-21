@@ -46,6 +46,11 @@ public:
     // configurable set of signals we must never eat.
     static void installGlobalFaultSwallow();
 
+    // Dobby-hook sigaction()/signal() so the protection cannot replace the
+    // swallower with its own die-through handler. Blocked attempts are
+    // logged with the caller's module+offset.
+    static void installSignalGuard();
+
     // Break the protection's "die by pausing main" fallback: SIGSTOP raised
     // in-process is observed and immediately continued.
     static void installStopShield();

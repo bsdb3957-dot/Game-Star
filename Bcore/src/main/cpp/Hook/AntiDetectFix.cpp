@@ -489,6 +489,77 @@ static void swallowHandler(int sig, siginfo_t *info, void *ctxRaw) {
               (void *) info->si_addr, swallows);
 }
 
+// --------------------------------------------------------- signal guard
+
+// The protection re-installs its own fatal-signal handlers after ours and
+// dies through them (a returning handler can always re-raise with SIG_DFL —
+// that death is unstoppable once ITS handler runs). Dobby-hook sigaction()
+// and signal() so any attempt to replace a protected handler is logged with
+// the caller's address and silently ignored.
+
+static int (*d_sigaction)(int, const struct sigaction *, struct sigaction *);
+static sighandler_t (*d_signal)(int, sighandler_t);
+
+static bool isProtectedSignal(int sig) {
+    for (int s : kSwallowSignals) {
+        if (s == sig)
+            return true;
+    }
+    return false;
+}
+
+static void logGuardCaller(const char *what, int sig) {
+    void *ret = __builtin_return_address(0);
+    Dl_info info{};
+    if (dladdr(ret, &info) != 0 && info.dli_fname != nullptr) {
+        ALOGD("signal guard: %s(sig=%d) from %s+0x%lx", what, sig,
+              info.dli_fname, (long) ((char *) ret - (char *) info.dli_fbase));
+    } else {
+        ALOGD("signal guard: %s(sig=%d) from %p", what, sig, ret);
+    }
+}
+
+static int hooked_sigaction(int sig, const struct sigaction *act, struct sigaction *old) {
+    if (isProtectedSignal(sig) && act != nullptr &&
+        ((act->sa_handler != SIG_DFL && act->sa_handler != SIG_IGN) ||
+         act->sa_sigaction != nullptr)) {
+        logGuardCaller("sigaction blocked", sig);
+        if (old != nullptr)
+            d_sigaction(sig, nullptr, old);
+        return 0;
+    }
+    return d_sigaction(sig, act, old);
+}
+
+static sighandler_t hooked_signal(int sig, sighandler_t handler) {
+    if (isProtectedSignal(sig) && handler != SIG_DFL && handler != SIG_IGN) {
+        logGuardCaller("signal blocked", sig);
+        struct sigaction old{};
+        d_sigaction(sig, nullptr, &old);
+        return old.sa_handler;
+    }
+    return d_signal(sig, handler);
+}
+
+#include "dobby.h"
+
+static void hookOneSymbol(const char *name, void *replacement, void **original) {
+    void *addr = dlsym(RTLD_DEFAULT, name);
+    if (addr == nullptr)
+        return;
+    DobbyHook(addr, replacement, original);
+}
+
+void AntiDetectFix::installSignalGuard() {
+    static bool installed = false;
+    if (installed)
+        return;
+    installed = true;
+    hookOneSymbol("sigaction", (void *) &hooked_sigaction, (void **) &d_sigaction);
+    hookOneSymbol("signal", (void *) &hooked_signal, (void **) &d_signal);
+    ALOGD("signal guard: sigaction/signal hooked");
+}
+
 void AntiDetectFix::installGlobalFaultSwallow() {
     struct sigaction sa{};
     sa.sa_sigaction = &swallowHandler;

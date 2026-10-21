@@ -18,6 +18,7 @@ HOOK_JNI(jstring, nativeLoad, JNIEnv *env, jobject obj, jstring name, jobject cl
         AntiDetectFix::installSyscallGuard();
         AntiDetectFix::installCrashShield();
         AntiDetectFix::installStopShield();
+        AntiDetectFix::installSignalGuard();
         AntiDetectFix::installGlobalFaultSwallow();
         AntiDetectFix::installJavaKillShield(env);
         // exit/_exit freezing is safe pre-load (only used on termination);
@@ -47,6 +48,7 @@ HOOK_JNI(jstring, nativeLoad2, JNIEnv *env, jobject obj, jstring name, jobject c
         AntiDetectFix::installSyscallGuard();
         AntiDetectFix::installCrashShield();
         AntiDetectFix::installStopShield();
+        AntiDetectFix::installSignalGuard();
         AntiDetectFix::installGlobalFaultSwallow();
         AntiDetectFix::installJavaKillShield(env);
         // exit/_exit freezing is safe pre-load (only used on termination);
