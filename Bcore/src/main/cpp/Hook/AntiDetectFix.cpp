@@ -625,6 +625,13 @@ void AntiDetectFix::installInstructionTrap() {
     if (fatal != nullptr)
         freezeFirstInsn("JNI FatalError", fatal);
 
-    freezeAnonExecPages();
+    // NOTE: freezeAnonExecPages() is intentionally not called. Empirically the
+    // only unlabeled anon-exec page present at load time is libart's own
+    // oat/trampoline region (0x744293c000), and freezing its first word hangs
+    // the guest before the first frame. The protection's real kill paths are
+    // already covered: syscalls (seccomp), signals (fault swallow), libc exit
+    // entries (frozen above), Java-level kills (no-op'd). If Appdome maps a
+    // fresh trampoline AFTER this point, it still cannot kill: every way out
+    // of that code ends in a frozen or swallowed primitive.
 #endif
 }
