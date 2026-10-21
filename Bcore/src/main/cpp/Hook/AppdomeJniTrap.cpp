@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include <sys/mman.h>
 #include <stdint.h>
+#include <unwind.h>
 #include "AppdomeJniTrap.h"
 #include "Log.h"
 #include "dobby.h"
@@ -50,13 +51,55 @@ struct DepthGuard {
 
 // ---- caller identification ------------------------------------------------
 
-bool calledFromLoader() {
+static bool isLoaderModule(const char *fname) {
+    return fname != nullptr &&
+           (strstr(fname, "libloader.so") != nullptr ||
+            strstr(fname, "libpglarmor.so") != nullptr);
+}
+
+// Fast path: immediate return address. Works when ART calls the JNI table
+// entry directly from native code in the loader.
+static bool calledFromLoaderDirect() {
     void *ret = __builtin_return_address(0);
     Dl_info info{};
-    if (dladdr(ret, &info) == 0 || info.dli_fname == nullptr)
-        return false;
-    return strstr(info.dli_fname, "libloader.so") != nullptr ||
-           strstr(info.dli_fname, "libpglarmor.so") != nullptr;
+    if (dladdr(ret, &info) != 0 && isLoaderModule(info.dli_fname))
+        return true;
+    return false;
+}
+
+// Slow path: libunwind over the current stack. ART's generic JNI trampoline
+// (art_generic_jni_trampoline) sits between the loader's native code and the
+// table entry, so the immediate caller is libart — the loader frame is a few
+// frames up. We walk at most 16 frames and stop early on the first hit.
+struct WalkCtx {
+    bool found;
+    int depth;
+};
+
+static _Unwind_Reason_Code walkCb(struct _Unwind_Context *ctx, void *arg) {
+    auto *c = static_cast<WalkCtx *>(arg);
+    if (++c->depth > 16) {
+        c->found = false;
+        return _URC_END_OF_STACK;
+    }
+    void *ip = (void *) _Unwind_GetIP(ctx);
+    if (ip != nullptr) {
+        Dl_info info{};
+        if (dladdr(ip, &info) != 0 && isLoaderModule(info.dli_fname)) {
+            c->found = true;
+            return _URC_END_OF_STACK;
+        }
+    }
+    return _URC_NO_REASON;
+}
+
+__attribute__((noinline))
+static bool calledFromLoader() {
+    if (calledFromLoaderDirect())
+        return true;
+    WalkCtx c{false, 0};
+    _Unwind_Backtrace(walkCb, &c);
+    return c.found;
 }
 
 // ---- dangerous-method classification --------------------------------------
