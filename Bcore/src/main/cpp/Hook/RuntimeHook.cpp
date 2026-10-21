@@ -28,9 +28,6 @@ HOOK_JNI(jstring, nativeLoad, JNIEnv *env, jobject obj, jstring name, jobject cl
     AntiDetectFix::patchFileOnDisk(nameC);
     AntiDetectFix::patchSyscallsOnDisk(nameC);
     AntiDetectFix::patchSvcStubsOnDisk(nameC);
-    // Disk is clean now; the kernel will map the fixed image. Also catch any
-    // already-mapped stale copy before JNI_OnLoad can run.
-    AntiDetectFix::neutralizeLiveTail();
     jstring result = orig_nativeLoad(env, obj, name, class_loader);
     if (result == nullptr) {
         AntiDetectFix::onLibraryLoaded(nameC);
@@ -60,7 +57,6 @@ HOOK_JNI(jstring, nativeLoad2, JNIEnv *env, jobject obj, jstring name, jobject c
     AntiDetectFix::patchFileOnDisk(nameC);
     AntiDetectFix::patchSyscallsOnDisk(nameC);
     AntiDetectFix::patchSvcStubsOnDisk(nameC);
-    AntiDetectFix::neutralizeLiveTail();
     jstring result = orig_nativeLoad2(env, obj, name, class_loader, caller);
     if (result == nullptr) {
         AntiDetectFix::onLibraryLoaded(nameC);
