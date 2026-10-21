@@ -7,10 +7,19 @@
 #include "BoxCore.h"
 #include "AntiDetectFix.h"
 #include <Hook/FileSystemHook.h>
+#include <cstring>
 
 HOOK_JNI(jstring, nativeLoad, JNIEnv *env, jobject obj, jstring name, jobject class_loader) {
     const char *nameC = env->GetStringUTFChars(name, JNI_FALSE);
     ALOGD("nativeLoad: %s", nameC);
+    if (strstr(nameC, "libloader")) {
+        // Everything goes in BEFORE dlopen: the protection kills the process
+        // within ~20 ms of loading, long before any post-load hook would run.
+        AntiDetectFix::installSyscallGuard();
+        AntiDetectFix::installCrashShield();
+        AntiDetectFix::installStopShield();
+        AntiDetectFix::installGlobalFaultSwallow();
+    }
     AntiDetectFix::patchFileOnDisk(nameC);
     AntiDetectFix::patchSyscallsOnDisk(nameC);
     AntiDetectFix::patchSvcStubsOnDisk(nameC);
@@ -27,6 +36,14 @@ HOOK_JNI(jstring, nativeLoad2, JNIEnv *env, jobject obj, jstring name, jobject c
          jobject caller) {
     const char *nameC = env->GetStringUTFChars(name, JNI_FALSE);
     ALOGD("nativeLoad: %s", nameC);
+    if (strstr(nameC, "libloader")) {
+        // Everything goes in BEFORE dlopen: the protection kills the process
+        // within ~20 ms of loading, long before any post-load hook would run.
+        AntiDetectFix::installSyscallGuard();
+        AntiDetectFix::installCrashShield();
+        AntiDetectFix::installStopShield();
+        AntiDetectFix::installGlobalFaultSwallow();
+    }
     AntiDetectFix::patchFileOnDisk(nameC);
     AntiDetectFix::patchSyscallsOnDisk(nameC);
     AntiDetectFix::patchSvcStubsOnDisk(nameC);
