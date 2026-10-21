@@ -7,6 +7,17 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <elf.h>
+#include <jni.h>
+#include <stddef.h>
+#include <sys/prctl.h>
+#include <signal.h>
+#include <ucontext.h>
+#include <dlfcn.h>
+#include <pthread.h>
+#include "JniHook/JniHook.h"
+#include <linux/filter.h>
+#include <linux/seccomp.h>
+#include <linux/audit.h>
 #include "AntiDetectFix.h"
 #include "Log.h"
 
@@ -251,48 +262,344 @@ void AntiDetectFix::patchSvcStubsOnDisk(const char *path) {
         words[i] = 0xd65f03c0;                             // ret
         patched++;
     }
-    // Generic syscall(nr, a0..a5) stub: "mov x8,x0; mov x0,x1; ... mov x5,x6; svc".
-    // Rewrite it to refuse fatal numbers and pass everything else through.
-    int generic = 0;
-    for (size_t i = 7; i + 19 < count; ++i) {
-        if (words[i] != kSvc)
-            continue;
-        if (words[i - 7] == 0xaa0003e8 && words[i - 6] == 0xaa0103e0 &&
-            words[i - 5] == 0xaa0203e1 && words[i - 4] == 0xaa0303e2 &&
-            words[i - 3] == 0xaa0403e3 && words[i - 2] == 0xaa0503e4 &&
-            words[i - 1] == 0xaa0603e5) {
-            uint32_t *w = &words[i - 7];
-            // Fatal numbers arrive in x0 (shifted before x8); others run the
-            // original arg shuffle + svc. Branch offsets are byte offsets / 4.
-            w[0] = 0x7101741F; // cmp w0, #93
-            w[1] = 0x540001C0; // b.eq -> ret0
-            w[2] = 0x7101941F; // cmp w0, #94
-            w[3] = 0x54000180; // b.eq -> ret0
-            w[4] = 0x7110151F; // cmp w0, #129
-            w[5] = 0x54000140; // b.eq -> ret0
-            w[6] = 0x7110541F; // cmp w0, #131
-            w[7] = 0x54000100; // b.eq -> ret0
-            w[8] = 0xaa0003e8; // mov x8, x0
-            w[9] = 0xaa0103e0; // mov x0, x1
-            w[10] = 0xaa0203e1; // mov x1, x2
-            w[11] = 0xaa0303e2; // mov x2, x3
-            w[12] = 0xaa0403e3; // mov x3, x4
-            w[13] = 0xaa0503e4; // mov x4, x5
-            w[14] = 0xaa0603e5; // mov x5, x6
-            // w[15] is the original svc (words[i]) — falls through to it
-            w[16] = 0xd65f03c0; // ret (after svc)
-            w[17] = 0x52800000; // ret0: mov w0, #0
-            w[18] = 0xd65f03c0; // ret
-            generic++;
-        }
-    }
-    if (generic > 0)
-        ALOGD("svc fixup: filtered %d generic syscall stubs in %s", generic, path);
+    // NOTE: the generic syscall(nr, ...) wrapper is intentionally left intact.
+    // The previous in-place filter could not fit in the original 8 words:
+    // it overwrote the svc, clobbered the next stub and encoded wrong cmp
+    // immediates, so every syscall() call returned garbage. Fatal numbers
+    // through this wrapper are caught by installSyscallGuard() instead.
     if (patched > 0) {
         msync(base, mapSize, MS_SYNC);
         ALOGD("svc fixup: neutralized %d fatal svc stubs in %s", patched, path);
     }
     munmap(base, mapSize);
     close(fd);
+#endif
+}
+
+void AntiDetectFix::installSyscallGuard() {
+#if defined(__aarch64__)
+    static bool installed = false;
+    if (installed)
+        return;
+
+    static const uint32_t kFatal[] = {
+            93,  // exit
+            94,  // exit_group
+            129, // kill
+            130, // tkill
+            131, // tgkill
+    };
+    constexpr size_t kNrCount = sizeof(kFatal) / sizeof(kFatal[0]);
+    struct sock_filter filter[3 + kNrCount * 2 + 1];
+    size_t n = 0;
+    auto stmt = [&filter, &n](uint16_t code, uint32_t k) {
+        filter[n].code = code;
+        filter[n].jt = 0;
+        filter[n].jf = 0;
+        filter[n].k = k;
+        n++;
+    };
+    auto jump = [&filter, &n](uint16_t code, uint32_t k, uint8_t jt, uint8_t jf) {
+        filter[n].code = code;
+        filter[n].jt = jt;
+        filter[n].jf = jf;
+        filter[n].k = k;
+        n++;
+    };
+    // Layout: ld arch ; jeq AARCH64 (else -> ALLOW) ; ld nr ;
+    // per fatal nr: jeq nr -> ret ERRNO(0) ; ... ; ret ALLOW.
+    stmt(BPF_LD | BPF_W | BPF_ABS, (uint32_t) offsetof(struct seccomp_data, arch));
+    // jt falls through to "ld nr"; jf skips the nr load, every compare and
+    // every fatal-ret, landing on the trailing ALLOW.
+    jump(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_AARCH64, 0,
+         (uint8_t) (kNrCount * 2 + 1));
+    stmt(BPF_LD | BPF_W | BPF_ABS, (uint32_t) offsetof(struct seccomp_data, nr));
+    for (size_t i = 0; i < kNrCount; ++i) {
+        jump(BPF_JMP | BPF_JEQ | BPF_K, kFatal[i], 0, 1);
+        stmt(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | 0);
+    }
+    stmt(BPF_RET | BPF_K, SECCOMP_RET_ALLOW);
+
+    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
+        ALOGD("syscall guard: PR_SET_NO_NEW_PRIVS failed");
+        return;
+    }
+    struct sock_fprog prog = {(unsigned short) n, filter};
+    if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog) == 0) {
+        installed = true;
+        ALOGD("syscall guard: seccomp filter installed");
+    } else {
+        ALOGD("syscall guard: PR_SET_SECCOMP failed");
+    }
+#endif
+}
+
+// ---------------------------------------------------------- crash shield
+
+static struct sigaction s_prevSegv;
+static struct sigaction s_prevBus;
+
+// Deliberate self-crash gadgets dereference constants, unmapped high
+// addresses or canonical garbage; real null derefs in the loader we already
+// fix. Only addresses far outside any mapped module are considered
+// intentional.
+static bool plausibleMapped(uintptr_t addr) {
+    Dl_info info{};
+    return dladdr(reinterpret_cast<void *>(addr), &info) != 0 &&
+           info.dli_fbase != nullptr;
+}
+
+static void shieldHandler(int sig, siginfo_t *info, void *ctxRaw) {
+    auto ctx = static_cast<ucontext_t *>(ctxRaw);
+    uintptr_t fault = reinterpret_cast<uintptr_t>(info->si_addr);
+    // 64 KiB covers zero-page and near-null arithmetic without swallowing
+    // real low-address bugs forever (each skip re-arms the handler).
+    if (fault >= 0x10000 && !plausibleMapped(fault)) {
+#if defined(__aarch64__)
+        ctx->uc_mcontext.pc += 4;
+#elif defined(__arm__)
+        ctx->uc_mcontext.arm_pc += 4;
+#endif
+        ALOGD("crash shield: skipped deliberate crash, pc=%p fault=%p",
+              (void *) ctx->uc_mcontext.pc, (void *) fault);
+        return;
+    }
+    struct sigaction *prev = sig == SIGSEGV ? &s_prevSegv : &s_prevBus;
+    if (prev->sa_sigaction != nullptr) {
+        prev->sa_sigaction(sig, info, ctxRaw);
+        return;
+    }
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+void AntiDetectFix::installCrashShield() {
+    static bool installed = false;
+    if (installed)
+        return;
+    struct sigaction sa{};
+    sa.sa_sigaction = &shieldHandler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    if (sigaction(SIGSEGV, &sa, &s_prevSegv) != 0)
+        return;
+    sigaction(SIGBUS, &sa, &s_prevBus);
+    installed = true;
+    ALOGD("crash shield: SIGSEGV/SIGBUS handler installed");
+}
+
+// ------------------------------------------------------- global fault swallow
+
+// When the protection decides to die and every syscall path is blocked, the
+// last cheap gadget is dereferencing a bad pointer (often null or a small
+// constant). We install a swallowing handler for the full actionable fault
+// set AFTER the guest loads, so anything registered before us (ART runtime
+// chain, debuggerd defaults) is bypassed. The skip loop is bounded: a thread
+// that faults more than kMaxSwallows times is parked forever — the rest of
+// the process, including the watchdog threads we already froze, never sees
+// a process death.
+
+static const int kSwallowSignals[] = {SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT, SIGTRAP};
+static constexpr int kMaxSwallows = 4096;
+
+static void swallowHandler(int sig, siginfo_t *info, void *ctxRaw) {
+    auto ctx = static_cast<ucontext_t *>(ctxRaw);
+    static _Thread_local int swallows = 0;
+    if (++swallows > kMaxSwallows) {
+        for (;;) pause();
+    }
+#if defined(__aarch64__)
+    ctx->uc_mcontext.pc += 4;
+    uintptr_t pc = ctx->uc_mcontext.pc;
+#elif defined(__arm__)
+    ctx->uc_mcontext.arm_pc += 4;
+    uintptr_t pc = ctx->uc_mcontext.arm_pc;
+#else
+    uintptr_t pc = 0;
+#endif
+    if (swallows < 64)
+        ALOGD("fault swallow: sig=%d pc=%p fault=%p count=%d", sig, (void *) pc,
+              (void *) info->si_addr, swallows);
+}
+
+void AntiDetectFix::installGlobalFaultSwallow() {
+    struct sigaction sa{};
+    sa.sa_sigaction = &swallowHandler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_NODEFER;
+    for (int sig : kSwallowSignals) {
+        sigaction(sig, &sa, nullptr);
+    }
+    ALOGD("fault swallow: handlers installed");
+}
+
+// ------------------------------------------------------------- stop shield
+
+// SIGSTOP cannot be caught, but the protection's in-process raise of it is
+// paired with our frozen watchdog threads, so the practical fallback is a
+// hang. SIGCONT against a stopped process resumes it; a small thread pokes
+// the process back to life whenever a stop slips through.
+
+static void *contLoop(void *) {
+    for (;;) {
+        sleep(3);
+        kill(getpid(), SIGCONT);
+    }
+    return nullptr;
+}
+
+void AntiDetectFix::installStopShield() {
+    static bool installed = false;
+    if (installed)
+        return;
+    pthread_t t;
+    if (pthread_create(&t, nullptr, &contLoop, nullptr) == 0) {
+        pthread_detach(t);
+        installed = true;
+    }
+}
+
+// ----------------------------------------------------------- java kill shield
+
+// Every process-death primitive reachable from guest Java code is neutered
+// at its native entry point. We cannot stack-walk to check the caller, so
+// these die globally for the guest process — which owns the process anyway.
+
+HOOK_JNI(void, killProcess, JNIEnv *env, jclass clazz, jint pid) {
+    ALOGD("java kill shield: Process.killProcess(%d) swallowed", pid);
+}
+
+static void logJavaKill(const char *what) {
+    ALOGD("java kill shield: %s swallowed", what);
+}
+
+void AntiDetectFix::installJavaKillShield(JNIEnv *env) {
+    static bool installed = false;
+    if (installed)
+        return;
+    installed = true;
+
+    // android.os.Process.killProcess(int) — the only JVM-reachable primitive
+    // that dies instantly without touching signals or syscalls we control.
+    JniHook::HookJniFun(env, "android/os/Process", "killProcess", "(I)V",
+                        (void *) new_killProcess, (void **) &orig_killProcess, true);
+
+    // Runtime.exit / Runtime.halt / System.exit all converge on
+    // java.lang.Shutdown.exit -> Runtime.halt; hook both Runtime entries.
+    static auto exitNoop = [](JNIEnv *, jobject, jint) {
+        logJavaKill("Runtime.exit");
+    };
+    static auto haltNoop = [](JNIEnv *, jobject, jint) {
+        logJavaKill("Runtime.halt");
+    };
+    JniHook::HookJniFun(env, "java/lang/Runtime", "exit", "(I)V",
+                        (void *) +exitNoop, nullptr, false);
+    JniHook::HookJniFun(env, "java/lang/Runtime", "halt", "(I)V",
+                        (void *) +haltNoop, nullptr, false);
+
+    ALOGD("java kill shield: installed");
+}
+
+// --------------------------------------------------------- instruction trap
+
+// "b ." — an unconditional branch to itself; the thread spins here forever.
+static constexpr uint32_t kSelfBranch = 0x14000000;
+
+static bool freezeFirstInsn(const char *label, void *addr) {
+    if (addr == nullptr)
+        return false;
+    static const long pageSize = sysconf(_SC_PAGESIZE);
+    uintptr_t pageStart = ((uintptr_t) addr) & ~(uintptr_t) (pageSize - 1);
+    size_t span = ((uintptr_t) addr - pageStart) + sizeof(uint32_t);
+    if (mprotect((void *) pageStart, span, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+        ALOGD("insn trap: mprotect failed for %s@%p", label, addr);
+        return false;
+    }
+    uint32_t *word = (uint32_t *) addr;
+    if (*word == kSelfBranch) {
+        mprotect((void *) pageStart, span, PROT_READ | PROT_EXEC);
+        return true;
+    }
+    *word = kSelfBranch;
+    __builtin___clear_cache((char *) addr, (char *) addr + sizeof(uint32_t));
+    mprotect((void *) pageStart, span, PROT_READ | PROT_EXEC);
+    ALOGD("insn trap: froze %s@%p", label, addr);
+    return true;
+}
+
+// The anonymous-exec mapping backing Dobby's closure bridge (and any other
+// generated trampoline in the process) is where the protection's dispatch
+// stub ends up. First word of each mapping gets a self-branch.
+static void freezeAnonExecPages() {
+    FILE *fp = fopen("/proc/self/maps", "r");
+    if (fp == nullptr)
+        return;
+    char line[512];
+    int frozen = 0;
+    while (fgets(line, sizeof(line), fp) != nullptr) {
+        // "start-end rwxp ... " with no path column, or a path that is only
+        // a [anon:...] label: executable anonymous memory.
+        unsigned long start = 0, end = 0;
+        char perms[8] = {0};
+        char path[256] = {0};
+        int fields = sscanf(line, "%lx-%lx %7s %*s %*s %*s %255[^\n]",
+                            &start, &end, perms, path);
+        if (fields < 3 || perms[2] != 'x')
+            continue;
+        // Only pages with no path at all are protection trampolines. Any
+        // labeled mapping (dalvik JIT cache, art, ashmem) is live runtime
+        // code and freezing its first word wedges the VM.
+        if (fields == 4)
+            continue;
+        if (start == 0 || start >= end)
+            continue;
+        if (freezeFirstInsn("anon-exec", (void *) start))
+            frozen++;
+    }
+    fclose(fp);
+    ALOGD("insn trap: froze %d anon-exec mappings", frozen);
+}
+
+void AntiDetectFix::installInstructionTrap() {
+#if defined(__aarch64__)
+    static bool installed = false;
+    if (installed)
+        return;
+    installed = true;
+
+    // libc termination entries: inline PLT branches from the loader bypass
+    // GOT patching, but they still land on these instructions.
+    const char *kLibcTargets[] = {"exit", "_exit", "_Exit", "abort", "raise"};
+    for (const char *name : kLibcTargets) {
+        void *addr = dlsym(RTLD_DEFAULT, name);
+        freezeFirstInsn(name, addr);
+    }
+
+    // android.os.Process.killProcess and the VMRuntime kill entries live in
+    // libandroid_runtime/libart as JNI natives; the loader calls them through
+    // the Java VM without ever touching our hooks.
+    const char *kRtTargets[] = {
+            "_ZN7android14android_os_Process_killProcessEP7_JNIEnvP8_jobjecti",
+    };
+    void *rt = dlopen("libandroid_runtime.so", RTLD_NOW | RTLD_NOLOAD);
+    if (rt == nullptr)
+        rt = dlopen("libandroid_runtime.so", RTLD_NOW);
+    if (rt != nullptr) {
+        for (const char *name : kRtTargets)
+            freezeFirstInsn("Process_killProcess", dlsym(rt, name));
+    }
+
+    // JNI dispatch table: CallVoidMethod / CallObjectMethodA etc. get the
+    // guest's kill by reflection. Trapping CallVoidMethod catches the common
+    // "Process.killProcess(pid)" reflection path — legitimate callers in the
+    // box use direct calls, never JNI, so freezing here is safe for us.
+    // NOTE: we do NOT trap the whole JNI table (the VM itself needs it); we
+    // trap FatalError only, which the protection also uses to die loudly.
+    // (CallVoidMethod stays live: the box framework calls into guest code.)
+    void *fatal = dlsym(RTLD_DEFAULT, "_ZN7_JNIEnv10FatalErrorEPKc");
+    if (fatal != nullptr)
+        freezeFirstInsn("JNI FatalError", fatal);
+
+    freezeAnonExecPages();
 #endif
 }
