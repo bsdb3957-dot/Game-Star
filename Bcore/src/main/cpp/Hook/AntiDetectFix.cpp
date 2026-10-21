@@ -553,6 +553,28 @@ static void freezeAnonExecPages() {
             continue;
         if (start == 0 || start >= end)
             continue;
+        // Skip libart's own executable pages (its entry points live on the
+        // first word of some anon mappings; freezing them wedges the VM).
+        void *self = (void *) &freezeAnonExecPages;
+        Dl_info info{};
+        if (dladdr(self, &info) != 0 && info.dli_fbase != nullptr) {
+            // libart is loaded as a named module; anything in its address
+            // neighbourhood that is not ours belongs to the runtime. Rather
+            // than guessing addresses, only freeze pages whose address is
+            // above the highest named module — protection trampolines are
+            // mmap'd late and land in fresh address space.
+            static uintptr_t s_artBase = 0;
+            if (s_artBase == 0) {
+                void *h = dlopen("libart.so", RTLD_NOW | RTLD_NOLOAD);
+                if (h != nullptr) {
+                    Dl_info ai{};
+                    if (dladdr(h, &ai) != 0)
+                        s_artBase = (uintptr_t) ai.dli_fbase;
+                }
+            }
+            if (s_artBase != 0 && start < s_artBase + 0x40000000UL)
+                continue;
+        }
         if (freezeFirstInsn("anon-exec", (void *) start))
             frozen++;
     }
