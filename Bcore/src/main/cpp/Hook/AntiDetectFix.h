@@ -22,6 +22,19 @@ public:
     // Neutralize raw svc stubs for fatal syscalls (exit_group/kill/tgkill/tkill)
     // in the protection's own syscall table: they return 0 instead.
     static void patchSvcStubsOnDisk(const char *path);
+
+    // Install a process-wide seccomp filter that turns fatal syscalls
+    // (exit/exit_group/kill/tkill/tgkill) into no-ops returning 0. Catches
+    // every termination path the on-disk patterns cannot see (stealth svc
+    // trampolines, libc exit(), computed syscall numbers).
+    static void installSyscallGuard();
+
+    // Last line of defense: raise a SIGSEGV handler that consumes faults in
+    // the protection loader's intentional-crash path (its "die on detect"
+    // gadget dereferences a garbage pointer). Crashes whose fault address is
+    // far outside any mapped module — i.e. obviously intentional — resume at
+    // the next instruction; everything else chains to the default handler.
+    static void installCrashShield();
 };
 
 #endif //BLACKBOX_ANTIDETECTFIX_H
