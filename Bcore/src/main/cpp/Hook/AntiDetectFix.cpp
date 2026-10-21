@@ -7,6 +7,14 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <elf.h>
+#include <stddef.h>
+#include <sys/prctl.h>
+#include <signal.h>
+#include <ucontext.h>
+#include <dlfcn.h>
+#include <linux/filter.h>
+#include <linux/seccomp.h>
+#include <linux/audit.h>
 #include "AntiDetectFix.h"
 #include "Log.h"
 
@@ -251,43 +259,11 @@ void AntiDetectFix::patchSvcStubsOnDisk(const char *path) {
         words[i] = 0xd65f03c0;                             // ret
         patched++;
     }
-    // Generic syscall(nr, a0..a5) stub: "mov x8,x0; mov x0,x1; ... mov x5,x6; svc".
-    // Rewrite it to refuse fatal numbers and pass everything else through.
-    int generic = 0;
-    for (size_t i = 7; i + 19 < count; ++i) {
-        if (words[i] != kSvc)
-            continue;
-        if (words[i - 7] == 0xaa0003e8 && words[i - 6] == 0xaa0103e0 &&
-            words[i - 5] == 0xaa0203e1 && words[i - 4] == 0xaa0303e2 &&
-            words[i - 3] == 0xaa0403e3 && words[i - 2] == 0xaa0503e4 &&
-            words[i - 1] == 0xaa0603e5) {
-            uint32_t *w = &words[i - 7];
-            // Fatal numbers arrive in x0 (shifted before x8); others run the
-            // original arg shuffle + svc. Branch offsets are byte offsets / 4.
-            w[0] = 0x7101741F; // cmp w0, #93
-            w[1] = 0x540001C0; // b.eq -> ret0
-            w[2] = 0x7101941F; // cmp w0, #94
-            w[3] = 0x54000180; // b.eq -> ret0
-            w[4] = 0x7110151F; // cmp w0, #129
-            w[5] = 0x54000140; // b.eq -> ret0
-            w[6] = 0x7110541F; // cmp w0, #131
-            w[7] = 0x54000100; // b.eq -> ret0
-            w[8] = 0xaa0003e8; // mov x8, x0
-            w[9] = 0xaa0103e0; // mov x0, x1
-            w[10] = 0xaa0203e1; // mov x1, x2
-            w[11] = 0xaa0303e2; // mov x2, x3
-            w[12] = 0xaa0403e3; // mov x3, x4
-            w[13] = 0xaa0503e4; // mov x4, x5
-            w[14] = 0xaa0603e5; // mov x5, x6
-            // w[15] is the original svc (words[i]) — falls through to it
-            w[16] = 0xd65f03c0; // ret (after svc)
-            w[17] = 0x52800000; // ret0: mov w0, #0
-            w[18] = 0xd65f03c0; // ret
-            generic++;
-        }
-    }
-    if (generic > 0)
-        ALOGD("svc fixup: filtered %d generic syscall stubs in %s", generic, path);
+    // NOTE: the generic syscall(nr, ...) wrapper is intentionally left intact.
+    // The previous in-place filter could not fit in the original 8 words:
+    // it overwrote the svc, clobbered the next stub and encoded wrong cmp
+    // immediates, so every syscall() call returned garbage. Fatal numbers
+    // through this wrapper are caught by installSyscallGuard() instead.
     if (patched > 0) {
         msync(base, mapSize, MS_SYNC);
         ALOGD("svc fixup: neutralized %d fatal svc stubs in %s", patched, path);
@@ -295,4 +271,116 @@ void AntiDetectFix::patchSvcStubsOnDisk(const char *path) {
     munmap(base, mapSize);
     close(fd);
 #endif
+}
+
+void AntiDetectFix::installSyscallGuard() {
+#if defined(__aarch64__)
+    static bool installed = false;
+    if (installed)
+        return;
+
+    static const uint32_t kFatal[] = {
+            93,  // exit
+            94,  // exit_group
+            129, // kill
+            130, // tkill
+            131, // tgkill
+    };
+    constexpr size_t kNrCount = sizeof(kFatal) / sizeof(kFatal[0]);
+    struct sock_filter filter[3 + kNrCount * 2 + 1];
+    size_t n = 0;
+    auto stmt = [&filter, &n](uint16_t code, uint32_t k) {
+        filter[n].code = code;
+        filter[n].jt = 0;
+        filter[n].jf = 0;
+        filter[n].k = k;
+        n++;
+    };
+    auto jump = [&filter, &n](uint16_t code, uint32_t k, uint8_t jt, uint8_t jf) {
+        filter[n].code = code;
+        filter[n].jt = jt;
+        filter[n].jf = jf;
+        filter[n].k = k;
+        n++;
+    };
+    // Layout: ld arch ; jeq AARCH64 (else -> ALLOW) ; ld nr ;
+    // per fatal nr: jeq nr -> ret ERRNO(0) ; ... ; ret ALLOW.
+    stmt(BPF_LD | BPF_W | BPF_ABS, (uint32_t) offsetof(struct seccomp_data, arch));
+    // jt falls through to "ld nr"; jf skips the nr load, every compare and
+    // every fatal-ret, landing on the trailing ALLOW.
+    jump(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_AARCH64, 0,
+         (uint8_t) (kNrCount * 2 + 1));
+    stmt(BPF_LD | BPF_W | BPF_ABS, (uint32_t) offsetof(struct seccomp_data, nr));
+    for (size_t i = 0; i < kNrCount; ++i) {
+        jump(BPF_JMP | BPF_JEQ | BPF_K, kFatal[i], 0, 1);
+        stmt(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | 0);
+    }
+    stmt(BPF_RET | BPF_K, SECCOMP_RET_ALLOW);
+
+    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
+        ALOGD("syscall guard: PR_SET_NO_NEW_PRIVS failed");
+        return;
+    }
+    struct sock_fprog prog = {(unsigned short) n, filter};
+    if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog) == 0) {
+        installed = true;
+        ALOGD("syscall guard: seccomp filter installed");
+    } else {
+        ALOGD("syscall guard: PR_SET_SECCOMP failed");
+    }
+#endif
+}
+
+// ---------------------------------------------------------- crash shield
+
+static struct sigaction s_prevSegv;
+static struct sigaction s_prevBus;
+
+// Deliberate self-crash gadgets dereference constants, unmapped high
+// addresses or canonical garbage; real null derefs in the loader we already
+// fix. Only addresses far outside any mapped module are considered
+// intentional.
+static bool plausibleMapped(uintptr_t addr) {
+    Dl_info info{};
+    return dladdr(reinterpret_cast<void *>(addr), &info) != 0 &&
+           info.dli_fbase != nullptr;
+}
+
+static void shieldHandler(int sig, siginfo_t *info, void *ctxRaw) {
+    auto ctx = static_cast<ucontext_t *>(ctxRaw);
+    uintptr_t fault = reinterpret_cast<uintptr_t>(info->si_addr);
+    // 64 KiB covers zero-page and near-null arithmetic without swallowing
+    // real low-address bugs forever (each skip re-arms the handler).
+    if (fault >= 0x10000 && !plausibleMapped(fault)) {
+#if defined(__aarch64__)
+        ctx->uc_mcontext.pc += 4;
+#elif defined(__arm__)
+        ctx->uc_mcontext.arm_pc += 4;
+#endif
+        ALOGD("crash shield: skipped deliberate crash, pc=%p fault=%p",
+              (void *) ctx->uc_mcontext.pc, (void *) fault);
+        return;
+    }
+    struct sigaction *prev = sig == SIGSEGV ? &s_prevSegv : &s_prevBus;
+    if (prev->sa_sigaction != nullptr) {
+        prev->sa_sigaction(sig, info, ctxRaw);
+        return;
+    }
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+void AntiDetectFix::installCrashShield() {
+    static bool installed = false;
+    if (installed)
+        return;
+    struct sigaction sa{};
+    sa.sa_sigaction = &shieldHandler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    if (sigaction(SIGSEGV, &sa, &s_prevSegv) != 0)
+        return;
+    sigaction(SIGBUS, &sa, &s_prevBus);
+    installed = true;
+    ALOGD("crash shield: SIGSEGV/SIGBUS handler installed");
 }
