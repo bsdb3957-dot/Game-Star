@@ -22,6 +22,12 @@ public:
     // Neutralize raw svc stubs for fatal syscalls (exit_group/kill/tgkill/tkill)
     // in the protection's own syscall table: they return 0 instead.
     static void patchSvcStubsOnDisk(const char *path);
+
+    // Install a process-wide seccomp filter that turns fatal syscalls
+    // (exit/exit_group/kill/tkill/tgkill) into no-ops returning 0. Catches
+    // every termination path the on-disk patterns cannot see (stealth svc
+    // trampolines, libc exit(), computed syscall numbers).
+    static void installSyscallGuard();
 };
 
 #endif //BLACKBOX_ANTIDETECTFIX_H
