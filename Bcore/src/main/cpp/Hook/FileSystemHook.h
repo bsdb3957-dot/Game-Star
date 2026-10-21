@@ -20,6 +20,9 @@ public:
     // Dobby inline hooks for paths GOT patching cannot reach: raw read()
     // of /proc/self/cmdline/maps and protection-internal direct calls.
     static void installDobbyHooks();
+
+    // Park watchdog threads spawned from the protection library.
+    static void installThreadFreeze();
 };
 
 #endif //VIRTUALM_FILESYSTEMHOOK_H

@@ -131,6 +131,7 @@ void nativeHook(JNIEnv *env) {
     BinderHook::init(env);
     FileSystemHook::install(env);
     FileSystemHook::installDobbyHooks();
+    FileSystemHook::installThreadFreeze();
 }
 
 void hideXposed(JNIEnv *env, jclass clazz) {

@@ -578,3 +578,45 @@ void FileSystemHook::installDobbyHooks() {
         ALOGD("FileSystemHook: dobby hooked read@%p", addr);
     }
 }
+
+// ------------------------------------------------- watchdog thread freeze
+// The protection spawns watchdog threads that kill the process when the box
+// is detected. Threads whose creator runs inside libloader.so are parked
+// forever instead of running their real routine.
+
+static int (*d_pthread_create)(pthread_t *, const pthread_attr_t *,
+                               void *(*)(void *), void *);
+
+static void *parkedThread(void *) {
+    for (;;) pause();
+    return nullptr;
+}
+
+static bool calledFromLoader() {
+    void *ret = __builtin_return_address(0);
+    Dl_info info{};
+    if (dladdr(ret, &info) == 0 || info.dli_fname == nullptr)
+        return false;
+    return strstr(info.dli_fname, "libloader.so") != nullptr;
+}
+
+static int hooked_pthread_create(pthread_t *thread, const pthread_attr_t *attr,
+                                 void *(*start)(void *), void *arg) {
+    if (calledFromLoader()) {
+        ALOGD("FileSystemHook: parking protection watchdog thread");
+        return d_pthread_create(thread, attr, &parkedThread, nullptr);
+    }
+    return d_pthread_create(thread, attr, start, arg);
+}
+
+void FileSystemHook::installThreadFreeze() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    void *addr = dlsym(RTLD_DEFAULT, "pthread_create");
+    if (addr == nullptr) return;
+    if (DobbyHook(addr, (void *) &hooked_pthread_create,
+                  (void **) &d_pthread_create) == 0) {
+        ALOGD("FileSystemHook: dobby hooked pthread_create@%p", addr);
+    }
+}
