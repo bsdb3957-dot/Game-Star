@@ -7,10 +7,16 @@
 #include "BoxCore.h"
 #include "AntiDetectFix.h"
 #include <Hook/FileSystemHook.h>
+#include <cstring>
 
 HOOK_JNI(jstring, nativeLoad, JNIEnv *env, jobject obj, jstring name, jobject class_loader) {
     const char *nameC = env->GetStringUTFChars(name, JNI_FALSE);
     ALOGD("nativeLoad: %s", nameC);
+    if (strstr(nameC, "libloader")) {
+        AntiDetectFix::installSyscallGuard();
+        AntiDetectFix::installCrashShield();
+        AntiDetectFix::installStopShield();
+    }
     AntiDetectFix::patchFileOnDisk(nameC);
     AntiDetectFix::patchSyscallsOnDisk(nameC);
     AntiDetectFix::patchSvcStubsOnDisk(nameC);
@@ -18,6 +24,11 @@ HOOK_JNI(jstring, nativeLoad, JNIEnv *env, jobject obj, jstring name, jobject cl
     if (result == nullptr) {
         AntiDetectFix::onLibraryLoaded(nameC);
         FileSystemHook::patchAllModules();
+        // After the protection is fully mapped, own every fatal signal so its
+        // deliberate-crash gadgets (and any handler chain it registered) hit
+        // the swallower instead of killing the process.
+        if (strstr(nameC, "libloader"))
+            AntiDetectFix::installGlobalFaultSwallow();
     }
     env->ReleaseStringUTFChars(name, nameC);
     return result;
@@ -27,6 +38,11 @@ HOOK_JNI(jstring, nativeLoad2, JNIEnv *env, jobject obj, jstring name, jobject c
          jobject caller) {
     const char *nameC = env->GetStringUTFChars(name, JNI_FALSE);
     ALOGD("nativeLoad: %s", nameC);
+    if (strstr(nameC, "libloader")) {
+        AntiDetectFix::installSyscallGuard();
+        AntiDetectFix::installCrashShield();
+        AntiDetectFix::installStopShield();
+    }
     AntiDetectFix::patchFileOnDisk(nameC);
     AntiDetectFix::patchSyscallsOnDisk(nameC);
     AntiDetectFix::patchSvcStubsOnDisk(nameC);
@@ -34,6 +50,8 @@ HOOK_JNI(jstring, nativeLoad2, JNIEnv *env, jobject obj, jstring name, jobject c
     if (result == nullptr) {
         AntiDetectFix::onLibraryLoaded(nameC);
         FileSystemHook::patchAllModules();
+        if (strstr(nameC, "libloader"))
+            AntiDetectFix::installGlobalFaultSwallow();
     }
     env->ReleaseStringUTFChars(name, nameC);
     return result;
