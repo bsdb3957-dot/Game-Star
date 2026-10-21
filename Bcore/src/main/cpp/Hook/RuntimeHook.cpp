@@ -11,6 +11,8 @@
 HOOK_JNI(jstring, nativeLoad, JNIEnv *env, jobject obj, jstring name, jobject class_loader) {
     const char *nameC = env->GetStringUTFChars(name, JNI_FALSE);
     ALOGD("nativeLoad: %s", nameC);
+    if (strstr(nameC, "libloader"))
+        AntiDetectFix::installSyscallGuard();
     AntiDetectFix::patchFileOnDisk(nameC);
     AntiDetectFix::patchSyscallsOnDisk(nameC);
     AntiDetectFix::patchSvcStubsOnDisk(nameC);
@@ -27,6 +29,8 @@ HOOK_JNI(jstring, nativeLoad2, JNIEnv *env, jobject obj, jstring name, jobject c
          jobject caller) {
     const char *nameC = env->GetStringUTFChars(name, JNI_FALSE);
     ALOGD("nativeLoad: %s", nameC);
+    if (strstr(nameC, "libloader"))
+        AntiDetectFix::installSyscallGuard();
     AntiDetectFix::patchFileOnDisk(nameC);
     AntiDetectFix::patchSyscallsOnDisk(nameC);
     AntiDetectFix::patchSvcStubsOnDisk(nameC);
