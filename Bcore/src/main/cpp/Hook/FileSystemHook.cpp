@@ -597,7 +597,9 @@ static bool calledFromLoader() {
     Dl_info info{};
     if (dladdr(ret, &info) == 0 || info.dli_fname == nullptr)
         return false;
-    return strstr(info.dli_fname, "libloader.so") != nullptr;
+    // The game's protection lives in libloader; pglarmor is its second stage.
+    return strstr(info.dli_fname, "libloader.so") != nullptr ||
+           strstr(info.dli_fname, "libpglarmor.so") != nullptr;
 }
 
 static int hooked_pthread_create(pthread_t *thread, const pthread_attr_t *attr,

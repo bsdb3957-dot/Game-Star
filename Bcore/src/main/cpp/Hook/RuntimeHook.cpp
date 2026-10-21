@@ -6,37 +6,25 @@
 #import "JniHook/JniHook.h"
 #include "BoxCore.h"
 #include "AntiDetectFix.h"
+#include "AppdomeJniTrap.h"
 #include <Hook/FileSystemHook.h>
 #include <cstring>
+
+// On libloader load: apply the on-disk neutralizations (memcpy crash fix,
+// kill-import rewrites, svc stubs — all safe and non-invasive) and install
+// the JNI trap so the protection's environment probes get clean answers.
+// No seccomp/signal/memory bruteforce — that approach only ever produced
+// black screens and unstoppable deaths; see ZOLVS_PORT_PLAN.md.
 
 HOOK_JNI(jstring, nativeLoad, JNIEnv *env, jobject obj, jstring name, jobject class_loader) {
     const char *nameC = env->GetStringUTFChars(name, JNI_FALSE);
     ALOGD("nativeLoad: %s", nameC);
-    if (strstr(nameC, "libloader")) {
-        // Everything goes in BEFORE dlopen: the protection kills the process
-        // within ~20 ms of loading, long before any post-load hook would run.
-        AntiDetectFix::installSyscallGuard();
-        AntiDetectFix::installCrashShield();
-        AntiDetectFix::installStopShield();
-        AntiDetectFix::installSignalGuard();
-        AntiDetectFix::installGlobalFaultSwallow();
-        AntiDetectFix::installJavaKillShield(env);
-        // exit/_exit freezing is safe pre-load (only used on termination);
-        // anon-exec freezing is NOT (it wedges libart's interpreter), so it
-        // runs post-load inside installInstructionTrap's scoped filter.
-        AntiDetectFix::installInstructionTrap();
-    }
-    AntiDetectFix::patchFileOnDisk(nameC);
-    AntiDetectFix::patchSyscallsOnDisk(nameC);
-    AntiDetectFix::patchSvcStubsOnDisk(nameC);
-    if (strstr(nameC, "libloader") && AntiDetectFix::consumeTailPatchFailed()) {
-        // The on-disk image does not match the patch patterns; loading it
-        // SIGSEGVs the whole process inside JNI_OnLoad. Refuse the load: the
-        // guest sees a normal UnsatisfiedLinkError, the box reinstalls the
-        // game, and the next attempt maps a freshly patched image.
-        ALOGD("nativeLoad: refusing %s, memcpy tail patch did not apply", nameC);
-        env->ReleaseStringUTFChars(name, nameC);
-        return env->NewStringUTF("avis: libloader memcpy tail not patched");
+    bool isLoader = strstr(nameC, "libloader") != nullptr;
+    if (isLoader) {
+        AntiDetectFix::patchFileOnDisk(nameC);
+        AntiDetectFix::patchSyscallsOnDisk(nameC);
+        AntiDetectFix::patchSvcStubsOnDisk(nameC);
+        AppdomeJniTrap::install(env);
     }
     jstring result = orig_nativeLoad(env, obj, name, class_loader);
     if (result == nullptr) {
@@ -51,27 +39,12 @@ HOOK_JNI(jstring, nativeLoad2, JNIEnv *env, jobject obj, jstring name, jobject c
          jobject caller) {
     const char *nameC = env->GetStringUTFChars(name, JNI_FALSE);
     ALOGD("nativeLoad: %s", nameC);
-    if (strstr(nameC, "libloader")) {
-        // Everything goes in BEFORE dlopen: the protection kills the process
-        // within ~20 ms of loading, long before any post-load hook would run.
-        AntiDetectFix::installSyscallGuard();
-        AntiDetectFix::installCrashShield();
-        AntiDetectFix::installStopShield();
-        AntiDetectFix::installSignalGuard();
-        AntiDetectFix::installGlobalFaultSwallow();
-        AntiDetectFix::installJavaKillShield(env);
-        // exit/_exit freezing is safe pre-load (only used on termination);
-        // anon-exec freezing is NOT (it wedges libart's interpreter), so it
-        // runs post-load inside installInstructionTrap's scoped filter.
-        AntiDetectFix::installInstructionTrap();
-    }
-    AntiDetectFix::patchFileOnDisk(nameC);
-    AntiDetectFix::patchSyscallsOnDisk(nameC);
-    AntiDetectFix::patchSvcStubsOnDisk(nameC);
-    if (strstr(nameC, "libloader") && AntiDetectFix::consumeTailPatchFailed()) {
-        ALOGD("nativeLoad: refusing %s, memcpy tail patch did not apply", nameC);
-        env->ReleaseStringUTFChars(name, nameC);
-        return env->NewStringUTF("avis: libloader memcpy tail not patched");
+    bool isLoader = strstr(nameC, "libloader") != nullptr;
+    if (isLoader) {
+        AntiDetectFix::patchFileOnDisk(nameC);
+        AntiDetectFix::patchSyscallsOnDisk(nameC);
+        AntiDetectFix::patchSvcStubsOnDisk(nameC);
+        AppdomeJniTrap::install(env);
     }
     jstring result = orig_nativeLoad2(env, obj, name, class_loader, caller);
     if (result == nullptr) {

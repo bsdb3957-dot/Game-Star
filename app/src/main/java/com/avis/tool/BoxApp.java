@@ -34,14 +34,6 @@ public class BoxApp extends Application {
                     File loader = new File(dir, "libloader.so");
                     if (loader.isFile())
                         NativeCore.patchLoaderLib(loader.getAbsolutePath());
-                    // If the memcpy-tail patch hit unexpected instructions the
-                    // guest will SIGSEGV on load; die here instead so the box
-                    // re-installs the game and the next boot maps a patched
-                    // image.
-                    if (NativeCore.checkTailPatchFailed()) {
-                        Logger.log("tail patch failed; restarting guest process");
-                        android.os.Process.killProcess(android.os.Process.myPid());
-                    }
                 }
             });
         } catch (Exception e) {
