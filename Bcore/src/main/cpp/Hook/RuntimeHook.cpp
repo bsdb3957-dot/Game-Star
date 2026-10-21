@@ -29,6 +29,15 @@ HOOK_JNI(jstring, nativeLoad, JNIEnv *env, jobject obj, jstring name, jobject cl
     AntiDetectFix::patchFileOnDisk(nameC);
     AntiDetectFix::patchSyscallsOnDisk(nameC);
     AntiDetectFix::patchSvcStubsOnDisk(nameC);
+    if (strstr(nameC, "libloader") && AntiDetectFix::consumeTailPatchFailed()) {
+        // The on-disk image does not match the patch patterns; loading it
+        // SIGSEGVs the whole process inside JNI_OnLoad. Refuse the load: the
+        // guest sees a normal UnsatisfiedLinkError, the box reinstalls the
+        // game, and the next attempt maps a freshly patched image.
+        ALOGD("nativeLoad: refusing %s, memcpy tail patch did not apply", nameC);
+        env->ReleaseStringUTFChars(name, nameC);
+        return env->NewStringUTF("avis: libloader memcpy tail not patched");
+    }
     jstring result = orig_nativeLoad(env, obj, name, class_loader);
     if (result == nullptr) {
         AntiDetectFix::onLibraryLoaded(nameC);
@@ -59,6 +68,11 @@ HOOK_JNI(jstring, nativeLoad2, JNIEnv *env, jobject obj, jstring name, jobject c
     AntiDetectFix::patchFileOnDisk(nameC);
     AntiDetectFix::patchSyscallsOnDisk(nameC);
     AntiDetectFix::patchSvcStubsOnDisk(nameC);
+    if (strstr(nameC, "libloader") && AntiDetectFix::consumeTailPatchFailed()) {
+        ALOGD("nativeLoad: refusing %s, memcpy tail patch did not apply", nameC);
+        env->ReleaseStringUTFChars(name, nameC);
+        return env->NewStringUTF("avis: libloader memcpy tail not patched");
+    }
     jstring result = orig_nativeLoad2(env, obj, name, class_loader, caller);
     if (result == nullptr) {
         AntiDetectFix::onLibraryLoaded(nameC);
