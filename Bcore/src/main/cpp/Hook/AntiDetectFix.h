@@ -11,6 +11,10 @@ public:
     // Patch known crash bugs in the guest protection loader after its library is mapped.
     static void onLibraryLoaded(const char *path);
 
+    // NOP the memcpy tail in the already-mapped image. Safe to call before
+    // or after dlopen; no-op when the loader is not mapped or already clean.
+    static void neutralizeLiveTail();
+
     // Patch the on-disk copy before it is loaded: neutralize the null-source
     // deref in the loader's embedded memcpy small-tail path.
     static void patchFileOnDisk(const char *path);

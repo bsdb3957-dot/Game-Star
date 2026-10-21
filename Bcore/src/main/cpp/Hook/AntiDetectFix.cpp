@@ -95,15 +95,11 @@ static constexpr uint32_t kInsnStrPost = 0xf80084c3;
 static constexpr uint32_t kInsnNop = 0xd503201f;
 static constexpr uint32_t kInsnBSkip = 0x1400000c;  // b +0x30 (to ret)
 
-void AntiDetectFix::onLibraryLoaded(const char *path) {
-    if (path == nullptr || strstr(path, "libloader.so") == nullptr)
-        return;
-    dl_iterate_phdr(phdr_cb, (void *) "libloader.so");
-
-    // Runtime mirror of patchFileOnDisk: the on-disk NOPs take effect on the
-    // NEXT process start, but this process already mapped the original
-    // instructions. The protection's JNI_OnLoad runs microseconds after
-    // dlopen returns, so neutralize the tail in the live image right now.
+// Runtime mirror of patchFileOnDisk. Exported so RuntimeHook can call it
+// BEFORE dlopen: patchFileOnDisk already NOP'd the tail on disk, so the
+// kernel maps a clean image — this re-applies the fix if anything (e.g. a
+// stale copy) slipped through, and is a no-op on an already-clean image.
+void AntiDetectFix::neutralizeLiveTail() {
     dl_iterate_phdr([](struct dl_phdr_info *info, size_t, void *) -> int {
         if (info->dlpi_name == nullptr || strstr(info->dlpi_name, "libloader.so") == nullptr)
             return 0;
@@ -124,6 +120,13 @@ void AntiDetectFix::onLibraryLoaded(const char *path) {
         mprotect((void *) pageStart, span, PROT_READ | PROT_EXEC);
         return 1;
     }, nullptr);
+}
+
+void AntiDetectFix::onLibraryLoaded(const char *path) {
+    if (path == nullptr || strstr(path, "libloader.so") == nullptr)
+        return;
+    dl_iterate_phdr(phdr_cb, (void *) "libloader.so");
+    neutralizeLiveTail();
 }
 
 void AntiDetectFix::patchAll(const char *path) {
