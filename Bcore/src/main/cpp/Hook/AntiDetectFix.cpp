@@ -149,12 +149,19 @@ void AntiDetectFix::patchFileOnDisk(const char *path) {
         return;
     }
     auto insn = reinterpret_cast<uint32_t *>((char *) map + crashOff);
+    // A null source faults at every width of the tail (8/4/2/1-byte chunks),
+    // not just the first ldr. NOP the whole tail block and force the entry
+    // branch to skip it: tbz w2,#3 -> b (unconditional) past the tail.
+    // Layout: 0x...64 tbz w2,#3,tail ; tail: 4 ldr/str pairs ; 0x...94 ret.
+    static constexpr uint32_t kInsnTbz3 = 0x36180062;   // tbz w2,#3,+0xc
+    static constexpr uint32_t kInsnBSkip = 0x1400000c;  // b +0x30 (to ret)
     if (insn[0] == kInsnLdrPost && insn[1] == kInsnStrPost) {
-        insn[0] = kInsnNop;
-        insn[1] = kInsnNop;
+        for (int i = 0; i < 8; ++i)
+            insn[i] = kInsnNop;
+        insn[-1] = kInsnBSkip;  // replaces the tbz that entered the tail
         msync(map, mapSize, MS_SYNC);
         ALOGD("memcpy fixup: patched on-disk memcpy tail in %s", path);
-    } else if (insn[0] == kInsnNop && insn[1] == kInsnNop) {
+    } else if (insn[0] == kInsnNop && insn[7] == kInsnNop && insn[-1] == kInsnBSkip) {
         ALOGD("memcpy fixup: %s already patched", path);
     } else {
         ALOGD("memcpy fixup: unexpected insns %08x %08x in %s", insn[0], insn[1], path);
