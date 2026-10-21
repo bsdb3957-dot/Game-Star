@@ -87,10 +87,43 @@ static int phdr_cb(struct dl_phdr_info *info, size_t, void *data) {
     return 0;
 }
 
+// AArch64: ldr x3, [x1], #8  /  str x3, [x6], #8 at the memcpy small-tail path.
+// With a null source these fault; the copy result is unused, so nop them out.
+static constexpr uintptr_t kCrashInsnOff = 0x2c5768;
+static constexpr uint32_t kInsnLdrPost = 0xf8408423;
+static constexpr uint32_t kInsnStrPost = 0xf80084c3;
+static constexpr uint32_t kInsnNop = 0xd503201f;
+static constexpr uint32_t kInsnBSkip = 0x1400000c;  // b +0x30 (to ret)
+
 void AntiDetectFix::onLibraryLoaded(const char *path) {
     if (path == nullptr || strstr(path, "libloader.so") == nullptr)
         return;
     dl_iterate_phdr(phdr_cb, (void *) "libloader.so");
+
+    // Runtime mirror of patchFileOnDisk: the on-disk NOPs take effect on the
+    // NEXT process start, but this process already mapped the original
+    // instructions. The protection's JNI_OnLoad runs microseconds after
+    // dlopen returns, so neutralize the tail in the live image right now.
+    dl_iterate_phdr([](struct dl_phdr_info *info, size_t, void *) -> int {
+        if (info->dlpi_name == nullptr || strstr(info->dlpi_name, "libloader.so") == nullptr)
+            return 0;
+        uintptr_t addr = info->dlpi_addr + kCrashInsnOff;
+        static const long pageSize = sysconf(_SC_PAGESIZE);
+        uintptr_t pageStart = addr & ~(uintptr_t) (pageSize - 1);
+        size_t span = (addr - pageStart) + 0x34;  // tbz at -4 .. end of tail
+        if (mprotect((void *) pageStart, span, PROT_READ | PROT_WRITE | PROT_EXEC) != 0)
+            return 0;
+        auto insn = reinterpret_cast<uint32_t *>(addr);
+        if (insn[0] == kInsnLdrPost && insn[1] == kInsnStrPost) {
+            for (int i = 0; i < 8; ++i)
+                insn[i] = kInsnNop;
+            insn[-1] = kInsnBSkip;
+            __builtin___clear_cache((char *) &insn[-1], (char *) &insn[8]);
+            ALOGD("memcpy fixup: neutralized memcpy tail in live image");
+        }
+        mprotect((void *) pageStart, span, PROT_READ | PROT_EXEC);
+        return 1;
+    }, nullptr);
 }
 
 void AntiDetectFix::patchAll(const char *path) {
@@ -101,12 +134,6 @@ void AntiDetectFix::patchAll(const char *path) {
     patchSvcStubsOnDisk(path);
 }
 
-// AArch64: ldr x3, [x1], #8  /  str x3, [x6], #8 at the memcpy small-tail path.
-// With a null source these fault; the copy result is unused, so nop them out.
-static constexpr uintptr_t kCrashInsnOff = 0x2c5768;
-static constexpr uint32_t kInsnLdrPost = 0xf8408423;
-static constexpr uint32_t kInsnStrPost = 0xf80084c3;
-static constexpr uint32_t kInsnNop = 0xd503201f;
 
 void AntiDetectFix::patchFileOnDisk(const char *path) {
     int fd = open(path, O_RDWR);
@@ -153,8 +180,6 @@ void AntiDetectFix::patchFileOnDisk(const char *path) {
     // not just the first ldr. NOP the whole tail block and force the entry
     // branch to skip it: tbz w2,#3 -> b (unconditional) past the tail.
     // Layout: 0x...64 tbz w2,#3,tail ; tail: 4 ldr/str pairs ; 0x...94 ret.
-    static constexpr uint32_t kInsnTbz3 = 0x36180062;   // tbz w2,#3,+0xc
-    static constexpr uint32_t kInsnBSkip = 0x1400000c;  // b +0x30 (to ret)
     if (insn[0] == kInsnLdrPost && insn[1] == kInsnStrPost) {
         for (int i = 0; i < 8; ++i)
             insn[i] = kInsnNop;
