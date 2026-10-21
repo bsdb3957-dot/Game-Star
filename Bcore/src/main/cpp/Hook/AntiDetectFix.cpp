@@ -89,7 +89,11 @@ static int phdr_cb(struct dl_phdr_info *info, size_t, void *data) {
 
 // AArch64: ldr x3, [x1], #8  /  str x3, [x6], #8 at the memcpy small-tail path.
 // With a null source these fault; the copy result is unused, so nop them out.
-static constexpr uintptr_t kCrashInsnOff = 0x2c5768;
+// This build has THREE identical tail blocks (the compiler outlined the same
+// memcpy epilogue at each copy site); the tombstone named 0x2c5768, but the
+// other two are equally lethal.
+static constexpr uintptr_t kCrashInsnOffs[] = {0x2b276c, 0x2b2728, 0x2c5768};
+static constexpr uintptr_t kCrashInsnOff = kCrashInsnOffs[2];
 static constexpr uint32_t kInsnLdrPost = 0xf8408423;
 static constexpr uint32_t kInsnStrPost = 0xf80084c3;
 static constexpr uint32_t kInsnNop = 0xd503201f;
@@ -103,21 +107,23 @@ void AntiDetectFix::neutralizeLiveTail() {
     dl_iterate_phdr([](struct dl_phdr_info *info, size_t, void *) -> int {
         if (info->dlpi_name == nullptr || strstr(info->dlpi_name, "libloader.so") == nullptr)
             return 0;
-        uintptr_t addr = info->dlpi_addr + kCrashInsnOff;
         static const long pageSize = sysconf(_SC_PAGESIZE);
-        uintptr_t pageStart = addr & ~(uintptr_t) (pageSize - 1);
-        size_t span = (addr - pageStart) + 0x34;  // tbz at -4 .. end of tail
-        if (mprotect((void *) pageStart, span, PROT_READ | PROT_WRITE | PROT_EXEC) != 0)
-            return 0;
-        auto insn = reinterpret_cast<uint32_t *>(addr);
-        if (insn[0] == kInsnLdrPost && insn[1] == kInsnStrPost) {
-            for (int i = 0; i < 8; ++i)
-                insn[i] = kInsnNop;
-            insn[-1] = kInsnBSkip;
-            __builtin___clear_cache((char *) &insn[-1], (char *) &insn[8]);
-            ALOGD("memcpy fixup: neutralized memcpy tail in live image");
+        for (uintptr_t off : kCrashInsnOffs) {
+            uintptr_t addr = info->dlpi_addr + off;
+            uintptr_t pageStart = addr & ~(uintptr_t) (pageSize - 1);
+            size_t span = (addr - pageStart) + 0x34;  // tbz at -4 .. end of tail
+            if (mprotect((void *) pageStart, span, PROT_READ | PROT_WRITE | PROT_EXEC) != 0)
+                continue;
+            auto insn = reinterpret_cast<uint32_t *>(addr);
+            if (insn[0] == kInsnLdrPost && insn[1] == kInsnStrPost) {
+                for (int i = 0; i < 8; ++i)
+                    insn[i] = kInsnNop;
+                insn[-1] = kInsnBSkip;
+                __builtin___clear_cache((char *) &insn[-1], (char *) &insn[8]);
+                ALOGD("memcpy fixup: neutralized memcpy tail in live image @0x%zx", off);
+            }
+            mprotect((void *) pageStart, span, PROT_READ | PROT_EXEC);
         }
-        mprotect((void *) pageStart, span, PROT_READ | PROT_EXEC);
         return 1;
     }, nullptr);
 }
@@ -145,7 +151,7 @@ void AntiDetectFix::patchFileOnDisk(const char *path) {
         return;
     }
     struct stat st;
-    if (fstat(fd, &st) != 0 || st.st_size < (off_t) (kCrashInsnOff + 8)) {
+    if (fstat(fd, &st) != 0 || st.st_size < (off_t) (kCrashInsnOffs[2] + 8)) {
         close(fd);
         return;
     }
@@ -156,43 +162,47 @@ void AntiDetectFix::patchFileOnDisk(const char *path) {
         ALOGD("memcpy fixup: mmap %s failed", path);
         return;
     }
-    // The patch offset is a virtual address in the file's address space;
-    // convert it through the program headers (vaddr != file offset in this
-    // build of the loader).
+    // The patch offsets are virtual addresses; convert each through the
+    // program headers (vaddr != file offset in general).
     const Elf64_Ehdr *eh = reinterpret_cast<const Elf64_Ehdr *>(map);
-    off_t crashOff = -1;
-    if (eh->e_phoff != 0 && eh->e_phnum != 0) {
+    auto v2o = [&](uintptr_t vaddr) -> off_t {
+        if (eh->e_phoff == 0 || eh->e_phnum == 0)
+            return -1;
         auto ph = reinterpret_cast<const Elf64_Phdr *>((const char *) map + eh->e_phoff);
         for (int i = 0; i < eh->e_phnum; ++i) {
             if (ph[i].p_type == PT_LOAD &&
-                kCrashInsnOff >= ph[i].p_vaddr &&
-                kCrashInsnOff + 8 <= ph[i].p_vaddr + ph[i].p_filesz) {
-                crashOff = (off_t) (ph[i].p_offset + (kCrashInsnOff - ph[i].p_vaddr));
-                break;
-            }
+                vaddr >= ph[i].p_vaddr &&
+                vaddr + 8 <= ph[i].p_vaddr + ph[i].p_filesz)
+                return (off_t) (ph[i].p_offset + (vaddr - ph[i].p_vaddr));
+        }
+        return -1;
+    };
+    int patched = 0, already = 0;
+    for (uintptr_t off : kCrashInsnOffs) {
+        off_t crashOff = v2o(off);
+        if (crashOff < 0 || crashOff + 8 > mapSize)
+            continue;
+        auto insn = reinterpret_cast<uint32_t *>((char *) map + crashOff);
+        // A null source faults at every width of the tail (8/4/2/1-byte
+        // chunks), not just the first ldr. NOP the whole tail block and force
+        // the entry branch to skip it.
+        if (insn[0] == kInsnLdrPost && insn[1] == kInsnStrPost) {
+            for (int i = 0; i < 8; ++i)
+                insn[i] = kInsnNop;
+            insn[-1] = kInsnBSkip;
+            patched++;
+        } else if (insn[0] == kInsnNop && insn[7] == kInsnNop && insn[-1] == kInsnBSkip) {
+            already++;
+        } else {
+            ALOGD("memcpy fixup: unexpected insns %08x %08x @0x%zx in %s",
+                  insn[0], insn[1], off, path);
         }
     }
-    if (crashOff < 0 || crashOff + 8 > mapSize) {
-        ALOGD("memcpy fixup: vaddr 0x%zx not mapped in %s", (size_t) kCrashInsnOff, path);
-        munmap(map, mapSize);
-        close(fd);
-        return;
-    }
-    auto insn = reinterpret_cast<uint32_t *>((char *) map + crashOff);
-    // A null source faults at every width of the tail (8/4/2/1-byte chunks),
-    // not just the first ldr. NOP the whole tail block and force the entry
-    // branch to skip it: tbz w2,#3 -> b (unconditional) past the tail.
-    // Layout: 0x...64 tbz w2,#3,tail ; tail: 4 ldr/str pairs ; 0x...94 ret.
-    if (insn[0] == kInsnLdrPost && insn[1] == kInsnStrPost) {
-        for (int i = 0; i < 8; ++i)
-            insn[i] = kInsnNop;
-        insn[-1] = kInsnBSkip;  // replaces the tbz that entered the tail
+    if (patched > 0) {
         msync(map, mapSize, MS_SYNC);
-        ALOGD("memcpy fixup: patched on-disk memcpy tail in %s", path);
-    } else if (insn[0] == kInsnNop && insn[7] == kInsnNop && insn[-1] == kInsnBSkip) {
-        ALOGD("memcpy fixup: %s already patched", path);
-    } else {
-        ALOGD("memcpy fixup: unexpected insns %08x %08x in %s", insn[0], insn[1], path);
+        ALOGD("memcpy fixup: patched %d on-disk memcpy tails in %s", patched, path);
+    } else if (already > 0) {
+        ALOGD("memcpy fixup: %s already patched (%d sites)", path, already);
     }
     munmap(map, mapSize);
     close(fd);
