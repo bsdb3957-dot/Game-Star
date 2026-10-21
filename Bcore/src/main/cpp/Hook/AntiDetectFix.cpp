@@ -505,23 +505,31 @@ void AntiDetectFix::installJavaKillShield(JNIEnv *env) {
 // "b ." — an unconditional branch to itself; the thread spins here forever.
 static constexpr uint32_t kSelfBranch = 0x14000000;
 
+// "wfi; b ." — park the thread asleep instead of spinning at 100% cpu.
+// sigsuspend with an empty mask: sleeps until a signal arrives, then loops
+// back. wfi is privileged on some kernels; sigsuspend is always legal.
+//   mov x8, #139 (rt_sigsuspend) ; svc #0 ; b .-8  ->  0xd2801168 0xd4000001 0x17fffffe
+static constexpr uint32_t kParkInsn[3] = {0xd2801168, 0xd4000001, 0x17fffffe};
+
 static bool freezeFirstInsn(const char *label, void *addr) {
     if (addr == nullptr)
         return false;
     static const long pageSize = sysconf(_SC_PAGESIZE);
     uintptr_t pageStart = ((uintptr_t) addr) & ~(uintptr_t) (pageSize - 1);
-    size_t span = ((uintptr_t) addr - pageStart) + sizeof(uint32_t);
+    size_t span = ((uintptr_t) addr - pageStart) + sizeof(kParkInsn);
     if (mprotect((void *) pageStart, span, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
         ALOGD("insn trap: mprotect failed for %s@%p", label, addr);
         return false;
     }
     uint32_t *word = (uint32_t *) addr;
-    if (*word == kSelfBranch) {
+    if (word[0] == kParkInsn[0] && word[1] == kParkInsn[1] && word[2] == kParkInsn[2]) {
         mprotect((void *) pageStart, span, PROT_READ | PROT_EXEC);
         return true;
     }
-    *word = kSelfBranch;
-    __builtin___clear_cache((char *) addr, (char *) addr + sizeof(uint32_t));
+    word[0] = kParkInsn[0];
+    word[1] = kParkInsn[1];
+    word[2] = kParkInsn[2];
+    __builtin___clear_cache((char *) addr, (char *) addr + sizeof(kParkInsn));
     mprotect((void *) pageStart, span, PROT_READ | PROT_EXEC);
     ALOGD("insn trap: froze %s@%p", label, addr);
     return true;
