@@ -20,10 +20,10 @@ HOOK_JNI(jstring, nativeLoad, JNIEnv *env, jobject obj, jstring name, jobject cl
         AntiDetectFix::installStopShield();
         AntiDetectFix::installGlobalFaultSwallow();
         AntiDetectFix::installJavaKillShield(env);
-        // NOTE: no installInstructionTrap here — freezing all anon-exec pages
-        // at load time wedges libart's interpreter trampoline (the app hangs
-        // on the black screen before any guest frame). We trap libc exits
-        // only after the guest is running; see onLibraryLoaded.
+        // exit/_exit freezing is safe pre-load (only used on termination);
+        // anon-exec freezing is NOT (it wedges libart's interpreter), so it
+        // runs post-load inside installInstructionTrap's scoped filter.
+        AntiDetectFix::installInstructionTrap();
     }
     AntiDetectFix::patchFileOnDisk(nameC);
     AntiDetectFix::patchSyscallsOnDisk(nameC);
@@ -32,8 +32,6 @@ HOOK_JNI(jstring, nativeLoad, JNIEnv *env, jobject obj, jstring name, jobject cl
     if (result == nullptr) {
         AntiDetectFix::onLibraryLoaded(nameC);
         FileSystemHook::patchAllModules();
-        if (strstr(nameC, "libloader"))
-            AntiDetectFix::installInstructionTrap();
     }
     env->ReleaseStringUTFChars(name, nameC);
     return result;
@@ -51,10 +49,10 @@ HOOK_JNI(jstring, nativeLoad2, JNIEnv *env, jobject obj, jstring name, jobject c
         AntiDetectFix::installStopShield();
         AntiDetectFix::installGlobalFaultSwallow();
         AntiDetectFix::installJavaKillShield(env);
-        // NOTE: no installInstructionTrap here — freezing all anon-exec pages
-        // at load time wedges libart's interpreter trampoline (the app hangs
-        // on the black screen before any guest frame). We trap libc exits
-        // only after the guest is running; see onLibraryLoaded.
+        // exit/_exit freezing is safe pre-load (only used on termination);
+        // anon-exec freezing is NOT (it wedges libart's interpreter), so it
+        // runs post-load inside installInstructionTrap's scoped filter.
+        AntiDetectFix::installInstructionTrap();
     }
     AntiDetectFix::patchFileOnDisk(nameC);
     AntiDetectFix::patchSyscallsOnDisk(nameC);
@@ -63,8 +61,6 @@ HOOK_JNI(jstring, nativeLoad2, JNIEnv *env, jobject obj, jstring name, jobject c
     if (result == nullptr) {
         AntiDetectFix::onLibraryLoaded(nameC);
         FileSystemHook::patchAllModules();
-        if (strstr(nameC, "libloader"))
-            AntiDetectFix::installInstructionTrap();
     }
     env->ReleaseStringUTFChars(name, nameC);
     return result;
