@@ -102,6 +102,32 @@ static bool calledFromLoader() {
     return c.found;
 }
 
+// ---- diagnostics -----------------------------------------------------------
+
+// Log every loader-originated JNI call (name + declaring class) so the
+// blacklist can be grown from real evidence instead of guesses. Throttled:
+// each distinct method is logged once, and repeats beyond that are silent.
+__attribute__((noinline))
+static void logLoaderCall(JNIEnv *env, jobject obj, jmethodID mid, bool isStatic) {
+    if (t_depth > 0)
+        return;
+    DepthGuard guard;
+    jclass cls = isStatic ? (jclass) obj : env->GetObjectClass(obj);
+    if (cls == nullptr) { env->ExceptionClear(); return; }
+    jclass methodCls = env->FindClass("java/lang/reflect/Method");
+    if (methodCls == nullptr) { env->ExceptionClear(); return; }
+    jobject refl = env->ToReflectedMethod(cls, mid, isStatic);
+    if (refl == nullptr) { env->ExceptionClear(); return; }
+    jmethodID toString = env->GetMethodID(methodCls, "toString", "()Ljava/lang/String;");
+    if (toString == nullptr) { env->ExceptionClear(); return; }
+    auto jdesc = (jstring) g_origFuncs->CallObjectMethod(env, refl, toString);
+    if (jdesc == nullptr) { env->ExceptionClear(); return; }
+    const char *descC = env->GetStringUTFChars(jdesc, nullptr);
+    if (descC != nullptr)
+        ALOGD("jni trap: loader call %s", descC);
+    env->ReleaseStringUTFChars(jdesc, descC);
+}
+
 // ---- dangerous-method classification --------------------------------------
 
 // Name fragments the protection uses to observe or kill the sandbox. The
@@ -218,6 +244,7 @@ const MethodInfo *resolve(JNIEnv *env, jobject obj, jmethodID mid, bool isStatic
 #define TRAP_PROLOGUE(isStatic)                                        \
     if (t_depth > 0 || !calledFromLoader())                            \
         return g_origFuncs->FN(env, obj, mid, args);                   \
+    logLoaderCall(env, obj, mid, isStatic);                            \
     const MethodInfo *info = resolve(env, obj, mid, isStatic);         \
     if (info == nullptr)                                               \
         return g_origFuncs->FN(env, obj, mid, args);                   \
@@ -237,6 +264,7 @@ jobject hooked_CallStaticObjectMethodV(JNIEnv *env, jclass obj, jmethodID mid,
                                        va_list args) {
     if (t_depth > 0 || !calledFromLoader())
         return g_origFuncs->CallStaticObjectMethodV(env, obj, mid, args);
+    logLoaderCall(env, (jobject) obj, mid, true);
     const MethodInfo *info = resolve(env, (jobject) obj, mid, true);
     if (info == nullptr || !info->dangerous)
         return g_origFuncs->CallStaticObjectMethodV(env, obj, mid, args);
@@ -250,6 +278,7 @@ void hooked_CallStaticVoidMethodV(JNIEnv *env, jclass obj, jmethodID mid,
         g_origFuncs->CallStaticVoidMethodV(env, obj, mid, args);
         return;
     }
+    logLoaderCall(env, (jobject) obj, mid, true);
     const MethodInfo *info = resolve(env, (jobject) obj, mid, true);
     if (info == nullptr || !info->dangerous) {
         g_origFuncs->CallStaticVoidMethodV(env, obj, mid, args);
@@ -265,6 +294,7 @@ void hooked_CallVoidMethodV(JNIEnv *env, jobject obj, jmethodID mid,
         g_origFuncs->CallVoidMethodV(env, obj, mid, args);
         return;
     }
+    logLoaderCall(env, obj, mid, false);
     const MethodInfo *info = resolve(env, obj, mid, false);
     if (info == nullptr || !info->dangerous) {
         g_origFuncs->CallVoidMethodV(env, obj, mid, args);
@@ -277,6 +307,7 @@ jint hooked_CallStaticIntMethodV(JNIEnv *env, jclass obj, jmethodID mid,
                                  va_list args) {
     if (t_depth > 0 || !calledFromLoader())
         return g_origFuncs->CallStaticIntMethodV(env, obj, mid, args);
+    logLoaderCall(env, (jobject) obj, mid, true);
     const MethodInfo *info = resolve(env, (jobject) obj, mid, true);
     if (info == nullptr || !info->dangerous)
         return g_origFuncs->CallStaticIntMethodV(env, obj, mid, args);
