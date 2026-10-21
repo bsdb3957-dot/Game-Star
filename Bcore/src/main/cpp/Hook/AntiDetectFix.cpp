@@ -99,6 +99,18 @@ static constexpr uint32_t kInsnStrPost = 0xf80084c3;
 static constexpr uint32_t kInsnNop = 0xd503201f;
 static constexpr uint32_t kInsnBSkip = 0x1400000c;  // b +0x30 (to ret)
 
+static volatile bool s_tailPatchFailed = false;
+
+void AntiDetectFix::markTailPatchFailed() {
+    s_tailPatchFailed = true;
+}
+
+bool AntiDetectFix::consumeTailPatchFailed() {
+    bool v = s_tailPatchFailed;
+    s_tailPatchFailed = false;
+    return v;
+}
+
 // Runtime mirror of patchFileOnDisk. Exported so RuntimeHook can call it
 // BEFORE dlopen: patchFileOnDisk already NOP'd the tail on disk, so the
 // kernel maps a clean image — this re-applies the fix if anything (e.g. a
@@ -196,6 +208,7 @@ void AntiDetectFix::patchFileOnDisk(const char *path) {
         } else {
             ALOGD("memcpy fixup: unexpected insns %08x %08x @0x%zx in %s",
                   insn[0], insn[1], off, path);
+            markTailPatchFailed();
         }
     }
     if (patched > 0) {

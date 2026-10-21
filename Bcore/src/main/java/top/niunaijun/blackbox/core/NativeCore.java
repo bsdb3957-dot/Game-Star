@@ -41,6 +41,8 @@ public class NativeCore {
 
     public static native void patchLoaderLib(String path);
 
+    public static native boolean checkTailPatchFailed();
+
     public static native void hideXposed();
 
     /**

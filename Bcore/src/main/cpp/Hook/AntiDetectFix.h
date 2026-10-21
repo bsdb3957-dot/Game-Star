@@ -15,6 +15,14 @@ public:
     // or after dlopen; no-op when the loader is not mapped or already clean.
     static void neutralizeLiveTail();
 
+    // Called when the memcpy-tail patch could not be applied (unexpected
+    // instructions on disk). Requests a process restart so the box re-installs
+    // the game and the next boot maps a freshly patched image.
+    static void markTailPatchFailed();
+
+    // True after markTailPatchFailed(); consumed by the Java layer.
+    static bool consumeTailPatchFailed();
+
     // Patch the on-disk copy before it is loaded: neutralize the null-source
     // deref in the loader's embedded memcpy small-tail path.
     static void patchFileOnDisk(const char *path);

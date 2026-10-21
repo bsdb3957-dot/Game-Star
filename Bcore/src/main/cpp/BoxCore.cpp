@@ -186,6 +186,10 @@ void nativeSetSelfUid(JNIEnv *env, jclass clazz, jint uid) {
     BoxCore::setSelfUid(uid);
 }
 
+jboolean nativeCheckTailPatchFailed(JNIEnv *env, jclass clazz) {
+    return AntiDetectFix::consumeTailPatchFailed() ? JNI_TRUE : JNI_FALSE;
+}
+
 static JNINativeMethod gMethods[] = {
         {"hideXposed", "()V",                                     (void *) hideXposed},
         {"addIORule",  "(Ljava/lang/String;Ljava/lang/String;)V", (void *) addIORule},
@@ -195,6 +199,7 @@ static JNINativeMethod gMethods[] = {
         {"pidMapPut",    "(Ljava/lang/String;II)V",               (void *) nativePidMapPut},
         {"pidMapRemove", "(Ljava/lang/String;I)V",                (void *) nativePidMapRemove},
         {"setSelfUid",   "(I)V",                                  (void *) nativeSetSelfUid},
+        {"checkTailPatchFailed", "()Z",                           (void *) nativeCheckTailPatchFailed},
 };
 
 int registerNativeMethods(JNIEnv *env, const char *className,
