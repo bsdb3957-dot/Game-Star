@@ -126,7 +126,29 @@ void AntiDetectFix::patchFileOnDisk(const char *path) {
         ALOGD("memcpy fixup: mmap %s failed", path);
         return;
     }
-    auto insn = reinterpret_cast<uint32_t *>((char *) map + kCrashInsnOff);
+    // The patch offset is a virtual address in the file's address space;
+    // convert it through the program headers (vaddr != file offset in this
+    // build of the loader).
+    const Elf64_Ehdr *eh = reinterpret_cast<const Elf64_Ehdr *>(map);
+    off_t crashOff = -1;
+    if (eh->e_phoff != 0 && eh->e_phnum != 0) {
+        auto ph = reinterpret_cast<const Elf64_Phdr *>((const char *) map + eh->e_phoff);
+        for (int i = 0; i < eh->e_phnum; ++i) {
+            if (ph[i].p_type == PT_LOAD &&
+                kCrashInsnOff >= ph[i].p_vaddr &&
+                kCrashInsnOff + 8 <= ph[i].p_vaddr + ph[i].p_filesz) {
+                crashOff = (off_t) (ph[i].p_offset + (kCrashInsnOff - ph[i].p_vaddr));
+                break;
+            }
+        }
+    }
+    if (crashOff < 0 || crashOff + 8 > mapSize) {
+        ALOGD("memcpy fixup: vaddr 0x%zx not mapped in %s", (size_t) kCrashInsnOff, path);
+        munmap(map, mapSize);
+        close(fd);
+        return;
+    }
+    auto insn = reinterpret_cast<uint32_t *>((char *) map + crashOff);
     if (insn[0] == kInsnLdrPost && insn[1] == kInsnStrPost) {
         insn[0] = kInsnNop;
         insn[1] = kInsnNop;
